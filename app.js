@@ -53,7 +53,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         };
 
         function renderProfilesImpl() {
-            profilesContainer.innerHTML = ''; 
+          try {
+            profilesContainer.innerHTML = '';
 
             const activeFilters = {
                 classYears: { active: document.getElementById('class-year-master-filter').checked, values: new Set(Array.from(document.querySelectorAll('#class-year-options-container input:checked')).map(cb => cb.value)) },
@@ -315,6 +316,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     profilesContainer.appendChild(cardsContainer);
                 }
             }
+          } catch (err) { console.error('renderProfilesImpl error:', err); }
         }
         
         function showProfile(alumnusId) {
@@ -449,6 +451,59 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             switchView(currentView);
         }
 
+        // --- Memories Gallery ---
+        function renderMemories() {
+            const container = document.querySelector('.memories-gallery');
+            if (!container) return;
+
+            // Collect all DRB photos from alumni
+            const memories = allAlumniData
+                .filter(a => a.drbPhotoUrl && a.drbPhotoUrl !== defaultProfilePic)
+                .map(a => ({
+                    url: a.drbPhotoUrl,
+                    name: `${a.firstName} ${a.lastName}`,
+                    year: a.gradYear,
+                    id: a.id
+                }));
+
+            // Also include profile photos as secondary memories
+            const profilePhotos = allAlumniData
+                .filter(a => a.photoUrl && a.photoUrl !== defaultProfilePic && (!a.drbPhotoUrl || a.drbPhotoUrl === defaultProfilePic))
+                .map(a => ({
+                    url: a.photoUrl,
+                    name: `${a.firstName} ${a.lastName}`,
+                    year: a.gradYear,
+                    id: a.id
+                }));
+
+            const allMemories = [...memories, ...profilePhotos];
+
+            if (allMemories.length === 0) {
+                container.innerHTML = '<p class="memories-empty">No photos uploaded yet. Be the first to share a memory!</p>';
+                return;
+            }
+
+            // Shuffle for variety
+            for (let i = allMemories.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [allMemories[i], allMemories[j]] = [allMemories[j], allMemories[i]];
+            }
+
+            container.innerHTML = allMemories.map(m => `
+                <a href="#profile=${m.id}" class="memory-card">
+                    <img src="${m.url}" alt="${m.name}" loading="lazy" onerror="this.closest('.memory-card').style.display='none'">
+                    <div class="memory-overlay">
+                        <span class="memory-name">${m.name}</span>
+                        <span class="memory-year">Class of ${m.year}</span>
+                    </div>
+                </a>
+            `).join('');
+
+            // Update memory count
+            const countEl = document.querySelector('.memories-count');
+            if (countEl) countEl.textContent = `${allMemories.length} photos`;
+        }
+
         // --- View Switching ---
         function switchView(view) {
             currentView = view;
@@ -483,6 +538,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 const el = document.getElementById('memories-view');
                 if (el) el.style.display = 'block';
                 document.getElementById('view-memories-btn').classList.add('active');
+                renderMemories();
             }
         }
 
@@ -496,6 +552,18 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         // --- Dashboard ---
         function renderDashboard() {
             if (allAlumniData.length === 0) return;
+
+            const featuredSection = document.getElementById('featured-section');
+            const statsGrid = document.getElementById('stats-grid');
+
+            // Hide featured and stats when searching
+            if (currentSearchQuery) {
+                if (featuredSection) featuredSection.style.display = 'none';
+                if (statsGrid) statsGrid.style.display = 'none';
+            } else {
+                if (featuredSection) featuredSection.style.display = '';
+                if (statsGrid) statsGrid.style.display = '';
+            }
 
             // Animated stat counters
             const cities = new Set(allAlumniData.map(a => a.city).filter(Boolean));
