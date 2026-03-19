@@ -1,0 +1,26 @@
+{
+  "name": "drb-database",
+  "version": "1.0.0",
+  "description": "> *Continuing a legacy of success*",
+  "main": "app.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thevincentlan/drb-network.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/thevincentlan/drb-network/issues"
+  },
+  "homepage": "https://github.com/thevincentlan/drb-network#readme",
+  "dependencies": {
+    "csv-parse": "^6.2.0",
+    "node-fetch": "^2.7.0",
+    "puppeteer": "^24.39.1"
+  }
+}

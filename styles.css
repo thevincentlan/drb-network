@@ -18,7 +18,6 @@
             background-color: var(--light-grey);
             color: var(--dark-grey);
             margin: 0;
-            padding-top: var(--header-height); /* Prevent content from hiding under sticky header */
         }
 
         #login-screen {
