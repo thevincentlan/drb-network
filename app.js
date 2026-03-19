@@ -14,6 +14,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let leafletMap = null;
         let mapMarkers = [];
         let currentSearchQuery = '';
+        let currentUserEmail = '';
         let geocodeCache = {};
 
 
@@ -333,6 +334,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             document.getElementById('dashboard-view').style.display = 'none';
             document.getElementById('grid-view').style.display = 'none';
             document.getElementById('map-view').style.display = 'none';
+            const memView = document.getElementById('memories-view');
+            if (memView) memView.style.display = 'none';
             profileView.style.display = 'block';
 
             const imageContainer = profileView.querySelector('.profile-image-container');
@@ -800,7 +803,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             if (geocodeCache[key]) return geocodeCache[key];
             if (geocodeCache[key] === null) return null; // previously failed
             try {
-                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName)}&limit=1&countrycodes=us`, {
+                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName)}&limit=1`, {
                     headers: { 'User-Agent': 'DRBNetworkDatabase/1.0' }
                 });
                 const data = await resp.json();
@@ -1391,7 +1394,6 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const otpMessage = document.getElementById('otp-message');
             const resendBtn = document.getElementById('resend-btn');
 
-            let currentUserEmail = '';
 
             loginBtn.addEventListener('click', () => {
                 const rawInput = loginEmailInput.value.trim();
