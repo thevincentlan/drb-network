@@ -12,6 +12,14 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzI73oecr1Iw4Gg
 
 
 
+        const escapeHTML = (str) => {
+            if (!str) return str;
+            return String(str).replace(/[&<>"']/g, match => {
+                const escapeMap = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+                return escapeMap[match];
+            });
+        };
+
         function normalizeName(name, map) {
             if (!name) return '';
             const lowerName = name.trim().toLowerCase().replace(/&/g, 'and');
