@@ -349,13 +349,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             drbStatsContainer.innerHTML = '';
             contactContainer.innerHTML = '';
 
-            // Add "Edit My Profile" button if this is the logged-in user's profile
+            // Add "Edit Profile" button if this is the user's own profile OR if admin
             const existingEditBtn = profileView.querySelector('.edit-profile-btn');
             if (existingEditBtn) existingEditBtn.remove();
-            if (alumnus.email && currentUserEmail && alumnus.email.toLowerCase().includes(currentUserEmail.toLowerCase())) {
+            const isAdmin = currentUserEmail === 'admin@drb.network';
+            const isOwnProfile = alumnus.email && currentUserEmail && alumnus.email.toLowerCase().includes(currentUserEmail.toLowerCase());
+            if (isOwnProfile || isAdmin) {
                 const editBtn = document.createElement('button');
                 editBtn.className = 'edit-profile-btn';
-                editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg> Edit My Profile';
+                editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg> ' + (isAdmin && !isOwnProfile ? 'Edit Profile (Admin)' : 'Edit My Profile');
                 editBtn.addEventListener('click', () => openEditModal(alumnus));
                 profileView.querySelector('#profile-main').appendChild(editBtn);
             }
@@ -529,15 +531,27 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 `).join('');
             }
 
-            // Browse grid — show all alumni as small cards
+            // Browse grid — show all alumni as small cards (respects search and sort)
             const dashGrid = document.getElementById('dashboard-grid');
             if (dashGrid) {
-                const sorted = [...allAlumniData].sort((a, b) => {
-                    const nameA = `${a.firstName} ${a.lastName}`;
-                    const nameB = `${b.firstName} ${b.lastName}`;
-                    return nameA.localeCompare(nameB);
-                });
-                dashGrid.innerHTML = sorted.map(a => `
+                let dashData = [...allAlumniData];
+
+                // Apply search filter
+                if (currentSearchQuery) {
+                    dashData = dashData.filter(a => {
+                        const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
+                        return fullName.includes(currentSearchQuery);
+                    });
+                }
+
+                // Apply sort
+                if (currentSort === 'alpha') {
+                    dashData.sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+                } else {
+                    dashData.sort((a, b) => (a.gradYear || '').localeCompare(b.gradYear || '') || `${a.firstName}`.localeCompare(`${b.firstName}`));
+                }
+
+                dashGrid.innerHTML = dashData.map(a => `
                     <a href="#profile=${a.id}" class="dash-card">
                         <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
                         <div class="dash-card-info">
@@ -1491,7 +1505,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     clearTimeout(searchDebounce);
                     searchDebounce = setTimeout(() => {
                         currentSearchQuery = searchInput.value.trim().toLowerCase();
-                        renderProfiles();
+                        renderCurrentView();
                     }, 200);
                 });
             }
@@ -1546,12 +1560,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     'anything else': document.getElementById('edit-about').value.trim()
                 };
 
+                // If admin editing someone else's profile, use the alumnus's email
+                const emailToUpdate = (currentUserEmail === 'admin@drb.network' && editingAlumnus.email) ? editingAlumnus.email : currentUserEmail;
+
                 fetch(APPS_SCRIPT_URL, {
                     method: 'POST',
                     headers: { 'Content-Type': 'text/plain' },
                     body: JSON.stringify({
                         action: 'update_profile',
-                        email: currentUserEmail,
+                        email: emailToUpdate,
                         updates: updates
                     })
                 })
