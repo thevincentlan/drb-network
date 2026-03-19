@@ -1,5 +1,6 @@
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6RsDDG3fZAA_MIWiz2ogijCmBAFWvbImzaLJePk59yJlQE-yjGL5KXRA/exec';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
 
 // --- This URL points to your Google Sheet ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTHcndXfYMgUm1eRG0IvoReaBxYowGhiay23WbY9JegVZkTlV1TI6_xFZY-GJq8UZEEMOdACI-2nOIb/pub?gid=370192004&single=true&output=csv';
@@ -443,6 +444,222 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
             document.getElementById('filter-panel').style.display = '';
             window.location.hash = '';
             switchView(currentView);
+        }
+
+        // --- View Switching ---
+        function switchView(view) {
+            currentView = view;
+            const views = ['dashboard-view', 'grid-view', 'main-view', 'map-view', 'memories-view'];
+            views.forEach(id => {
+                const el = document.getElementById(id);
+                if (el) el.style.display = 'none';
+            });
+            document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+
+            if (view === 'dashboard') {
+                const el = document.getElementById('dashboard-view');
+                if (el) el.style.display = 'block';
+                document.getElementById('view-dashboard-btn').classList.add('active');
+                renderDashboard();
+            } else if (view === 'grid') {
+                const el = document.getElementById('grid-view');
+                if (el) el.style.display = 'block';
+                document.getElementById('view-grid-btn').classList.add('active');
+                renderGridView();
+            } else if (view === 'timeline') {
+                const el = document.getElementById('main-view');
+                if (el) el.style.display = 'block';
+                document.getElementById('view-timeline-btn').classList.add('active');
+                renderProfiles();
+            } else if (view === 'map') {
+                const el = document.getElementById('map-view');
+                if (el) el.style.display = 'block';
+                document.getElementById('view-map-btn').classList.add('active');
+                setTimeout(() => renderMapView(), 100);
+            } else if (view === 'memories') {
+                const el = document.getElementById('memories-view');
+                if (el) el.style.display = 'block';
+                document.getElementById('view-memories-btn').classList.add('active');
+            }
+        }
+
+        // --- Dashboard ---
+        function renderDashboard() {
+            if (allAlumniData.length === 0) return;
+
+            // Animated stat counters
+            const cities = new Set(allAlumniData.map(a => a.city).filter(Boolean));
+            const industries = new Set(allAlumniData.map(a => a.occupation).filter(Boolean));
+            const classYears = new Set(allAlumniData.map(a => a.gradYear).filter(Boolean));
+
+            animateCounter('stat-total', allAlumniData.length);
+            animateCounter('stat-cities', cities.size);
+            animateCounter('stat-industries', industries.size);
+            animateCounter('stat-classes', classYears.size);
+
+            // Featured carousel — pick 3 random alumni with photos
+            const withPhotos = allAlumniData.filter(a => a.photoUrl && a.photoUrl !== defaultProfilePic);
+            const featured = [];
+            const pool = [...withPhotos];
+            for (let i = 0; i < Math.min(3, pool.length); i++) {
+                const idx = Math.floor(Math.random() * pool.length);
+                featured.push(pool.splice(idx, 1)[0]);
+            }
+
+            const carousel = document.getElementById('featured-carousel');
+            if (carousel) {
+                carousel.innerHTML = featured.map(a => `
+                    <a href="#profile=${a.id}" class="featured-card">
+                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" onerror="this.src='${defaultProfilePic}'">
+                        <div class="featured-info">
+                            <h3>${a.firstName} ${a.lastName}</h3>
+                            <p>Class of ${a.gradYear}</p>
+                            ${a.occupation ? `<p class="featured-occ">${a.occupation}</p>` : ''}
+                            ${a.city ? `<p class="featured-city">📍 ${a.city}</p>` : ''}
+                        </div>
+                    </a>
+                `).join('');
+            }
+
+            // Browse grid — show all alumni as small cards
+            const dashGrid = document.getElementById('dashboard-grid');
+            if (dashGrid) {
+                const sorted = [...allAlumniData].sort((a, b) => {
+                    const nameA = `${a.firstName} ${a.lastName}`;
+                    const nameB = `${b.firstName} ${b.lastName}`;
+                    return nameA.localeCompare(nameB);
+                });
+                dashGrid.innerHTML = sorted.map(a => `
+                    <a href="#profile=${a.id}" class="dash-card">
+                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
+                        <div class="dash-card-info">
+                            <strong>${a.firstName} ${a.lastName}</strong>
+                            <span>Class of ${a.gradYear}</span>
+                        </div>
+                    </a>
+                `).join('');
+            }
+        }
+
+        function animateCounter(id, target) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            const duration = 800;
+            const start = performance.now();
+            const from = parseInt(el.textContent) || 0;
+            function tick(now) {
+                const elapsed = now - start;
+                const progress = Math.min(elapsed / duration, 1);
+                const eased = 1 - Math.pow(1 - progress, 3);
+                el.textContent = Math.round(from + (target - from) * eased);
+                if (progress < 1) requestAnimationFrame(tick);
+            }
+            requestAnimationFrame(tick);
+        }
+
+        // --- Grid View ---
+        function renderGridView() {
+            const container = document.getElementById('grid-container');
+            if (!container) return;
+            let filtered = allAlumniData;
+            if (typeof currentSearchQuery !== 'undefined' && currentSearchQuery) {
+                filtered = filtered.filter(a => {
+                    const name = `${a.firstName} ${a.lastName}`.toLowerCase();
+                    return name.includes(currentSearchQuery);
+                });
+            }
+            const sorted = currentSort === 'alpha'
+                ? [...filtered].sort((a, b) => `${a.firstName}`.localeCompare(`${b.firstName}`))
+                : [...filtered].sort((a, b) => (b.gradYear || '').localeCompare(a.gradYear || ''));
+
+            container.innerHTML = sorted.map(a => `
+                <a href="#profile=${a.id}" class="grid-card">
+                    <div class="grid-card-img">
+                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
+                    </div>
+                    <div class="grid-card-body">
+                        <h3>${a.firstName} ${a.lastName}</h3>
+                        <p class="grid-year">Class of ${a.gradYear}</p>
+                        ${a.city ? `<p class="grid-city">📍 ${a.city}</p>` : ''}
+                        ${a.occupation ? `<p class="grid-occ">${a.occupation}</p>` : ''}
+                    </div>
+                </a>
+            `).join('');
+        }
+
+        // --- Map View ---
+        const CITY_COORDS = {
+            'new york': [40.7128, -74.0060], 'los angeles': [34.0522, -118.2437],
+            'chicago': [41.8781, -87.6298], 'houston': [29.7604, -95.3698],
+            'phoenix': [33.4484, -112.0740], 'philadelphia': [39.9526, -75.1652],
+            'san antonio': [29.4241, -98.4936], 'san diego': [32.7157, -117.1611],
+            'dallas': [32.7767, -96.7970], 'charlotte': [35.2271, -80.8431],
+            'raleigh': [35.7796, -78.6382], 'chapel hill': [35.9132, -79.0558],
+            'durham': [35.9940, -78.8986], 'greensboro': [36.0726, -79.7920],
+            'atlanta': [33.7490, -84.3880], 'miami': [25.7617, -80.1918],
+            'washington': [38.9072, -77.0369], 'dc': [38.9072, -77.0369],
+            'seattle': [47.6062, -122.3321], 'denver': [39.7392, -104.9903],
+            'boston': [42.3601, -71.0589], 'nashville': [36.1627, -86.7816],
+            'austin': [30.2672, -97.7431], 'san francisco': [37.7749, -122.4194],
+            'portland': [45.5152, -122.6784], 'las vegas': [36.1699, -115.1398],
+            'memphis': [35.1495, -90.0490], 'louisville': [38.2527, -85.7585],
+            'baltimore': [39.2904, -76.6122], 'milwaukee': [43.0389, -87.9065],
+            'albuquerque': [35.0844, -106.6504], 'tucson': [32.2226, -110.9747],
+            'fresno': [36.7378, -119.7871], 'sacramento': [38.5816, -121.4944],
+            'kansas city': [39.0997, -94.5786], 'colorado springs': [38.8339, -104.8214],
+            'omaha': [41.2565, -95.9345], 'minneapolis': [44.9778, -93.2650],
+            'tampa': [27.9506, -82.4572], 'orlando': [28.5383, -81.3792],
+            'jacksonville': [30.3322, -81.6557], 'richmond': [37.5407, -77.4360],
+            'new orleans': [29.9511, -90.0715], 'cleveland': [41.4993, -81.6944],
+            'pittsburgh': [40.4406, -79.9959], 'cincinnati': [39.1031, -84.5120],
+            'indianapolis': [39.7684, -86.1581], 'columbus': [39.9612, -82.9988],
+            'detroit': [42.3314, -83.0458], 'st. louis': [38.6270, -90.1994],
+            'san jose': [37.3382, -121.8863], 'fort worth': [32.7555, -97.3308],
+            'wilmington': [34.2257, -77.9447], 'fayetteville': [35.0527, -78.8784],
+            'winston-salem': [36.0999, -80.2442]
+        };
+
+        function renderMapView() {
+            const container = document.getElementById('map-container');
+            if (!container) return;
+            if (!leafletMap) {
+                leafletMap = L.map(container).setView([37.0, -96.0], 4);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors',
+                    maxZoom: 18
+                }).addTo(leafletMap);
+            }
+            leafletMap.invalidateSize();
+
+            // Clear existing markers
+            mapMarkers.forEach(m => leafletMap.removeLayer(m));
+            mapMarkers = [];
+
+            // Group alumni by city
+            const cityGroups = {};
+            allAlumniData.forEach(a => {
+                if (!a.city) return;
+                const cityKey = a.city.toLowerCase().replace(/,.*$/, '').trim();
+                if (!cityGroups[cityKey]) cityGroups[cityKey] = { name: a.city, alumni: [] };
+                cityGroups[cityKey].alumni.push(a);
+            });
+
+            Object.entries(cityGroups).forEach(([key, group]) => {
+                const coords = CITY_COORDS[key];
+                if (!coords) return;
+
+                const marker = L.circleMarker(coords, {
+                    radius: Math.min(6 + group.alumni.length * 2, 20),
+                    fillColor: '#7BAFD4',
+                    color: '#4a7fa0',
+                    weight: 2,
+                    fillOpacity: 0.8
+                }).addTo(leafletMap);
+
+                const names = group.alumni.map(a => `<a href="#profile=${a.id}" style="color:#4a7fa0;">${a.firstName} ${a.lastName}</a>`).join('<br>');
+                marker.bindPopup(`<strong>${group.name}</strong> (${group.alumni.length})<br>${names}`);
+                mapMarkers.push(marker);
+            });
         }
 
         function router() {
@@ -935,6 +1152,38 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
                 loginMessage.classList.remove('error');
                 loginBtn.disabled = true;
 
+                // --- Admin Bypass ---
+                if (rawInput === SECRET_ADMIN_PASSWORD) {
+                    loginMessage.textContent = 'Admin access granted. Loading database...';
+                    // Fetch the public CSV directly as an admin bypass
+                    Papa.parse(googleSheetUrl, {
+                        download: true,
+                        header: false,
+                        skipEmptyLines: true,
+                        complete: function(results) {
+                            const csvOld = Papa.unparse(results.data); // Mocking old sheet data as same for now
+                            const csvNew = Papa.unparse(results.data);
+                            currentUserEmail = 'admin@drb.network';
+                            loadDataAndRender(csvOld, csvNew);
+                            document.body.classList.add('logged-in');
+                            sessionStorage.setItem('drb_session', JSON.stringify({
+                                csvOld: csvOld,
+                                csvNew: csvNew,
+                                email: currentUserEmail,
+                                timestamp: Date.now()
+                            }));
+                            showMainView();
+                            loginBtn.disabled = false;
+                        },
+                        error: function(err) {
+                            loginMessage.textContent = 'Admin login failed: ' + err;
+                            loginMessage.classList.add('error');
+                            loginBtn.disabled = false;
+                        }
+                    });
+                    return;
+                }
+
                 fetch(`${APPS_SCRIPT_URL}?action=request_otp&email=${encodeURIComponent(rawInput)}`, {
                     method: 'GET'
                 })
@@ -1039,6 +1288,8 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
             document.getElementById('view-grid-btn').addEventListener('click', () => switchView('grid'));
             document.getElementById('view-timeline-btn').addEventListener('click', () => switchView('timeline'));
             document.getElementById('view-map-btn').addEventListener('click', () => switchView('map'));
+            const viewMemoriesBtn = document.getElementById('view-memories-btn');
+            if (viewMemoriesBtn) viewMemoriesBtn.addEventListener('click', () => switchView('memories'));
 
             // --- Logout ---
             if (logoutBtn) {

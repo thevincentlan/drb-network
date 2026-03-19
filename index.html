@@ -55,6 +55,7 @@
                 <button id="view-grid-btn" class="view-btn" title="Grid View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M4 11h5V5H4v6zm0 7h5v-6H4v6zm6 0h5v-6h-5v6zm6 0h5v-6h-5v6zm-6-7h5V5h-5v6zm6-6v6h5V5h-5z"/></svg></button>
                 <button id="view-timeline-btn" class="view-btn" title="Timeline View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg></button>
                 <button id="view-map-btn" class="view-btn" title="Map View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></button>
+                <button id="view-memories-btn" class="view-btn" title="Memories Page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c0 1.1.9-2 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></button>
             </div>
             <button id="logout-btn" class="logout-btn" title="Log Out">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
@@ -213,6 +214,25 @@
             <!-- Map View -->
             <div id="map-view" style="display:none;">
                 <div id="map-container"></div>
+            </div>
+
+            <!-- Memories View -->
+            <div id="memories-view" style="display:none;">
+                <div class="memories-container">
+                    <div class="memories-header">
+                        <h2>📸 DRB Memories</h2>
+                        <p>A collection of photos and videos from over the years.</p>
+                        <a href="https://drive.google.com/drive/folders/1oXzXtw4lPY_jV4D9BA65aipjm9yf44mw" target="_blank" class="upload-btn">
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z"/></svg>
+                            Explore or Upload to Google Drive
+                        </a>
+                    </div>
+                    <div class="memories-coming-soon">
+                        <div class="empty-state-icon">🎞️</div>
+                        <h3>Photo Gallery Coming Soon</h3>
+                        <p>We are currently organizing the archives. In the meantime, you can access the raw folders on Google Drive above.</p>
+                    </div>
+                </div>
             </div>
 
             <div id="profile-view" style="display: none;">
