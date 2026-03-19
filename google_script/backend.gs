@@ -154,6 +154,70 @@ function createJsonResponse(obj) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function doPost(e) {
+  try {
+    const body = JSON.parse(e.postData.contents);
+    const action = body.action;
+
+    if (action === 'update_profile') {
+      const email = body.email ? String(body.email).toLowerCase().trim() : '';
+      const updates = body.updates || {};
+
+      if (!email || Object.keys(updates).length === 0) {
+        return createJsonResponse({ success: false, error: 'Missing email or updates.' });
+      }
+
+      const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+
+      // Try to find and update in each sheet
+      const sheetsToSearch = [
+        { name: NEW_SHEET_NAME, sheet: ss.getSheetByName(NEW_SHEET_NAME) },
+        { name: OLD_SHEET_NAME, sheet: ss.getSheetByName(OLD_SHEET_NAME) }
+      ];
+
+      for (const sheetInfo of sheetsToSearch) {
+        if (!sheetInfo.sheet) continue;
+        const data = sheetInfo.sheet.getDataRange().getValues();
+        if (data.length < 2) continue;
+
+        const headers = data[0];
+        const emailIdx = headers.findIndex(h => h && h.toString().toLowerCase().includes('email'));
+        if (emailIdx === -1) continue;
+
+        for (let i = 1; i < data.length; i++) {
+          const rowEmail = String(data[i][emailIdx]).toLowerCase().trim();
+          if (rowEmail === email || rowEmail.includes(email)) {
+            // Found the user — apply updates
+            for (const [headerMatch, newValue] of Object.entries(updates)) {
+              const colIdx = headers.findIndex(h => h && h.toString().toLowerCase().includes(headerMatch.toLowerCase()));
+              if (colIdx !== -1) {
+                sheetInfo.sheet.getRange(i + 1, colIdx + 1).setValue(newValue);
+              }
+            }
+
+            // Return fresh CSV data for both sheets
+            const dataOld = ss.getSheetByName(OLD_SHEET_NAME).getDataRange().getValues();
+            const dataNew = ss.getSheetByName(NEW_SHEET_NAME).getDataRange().getValues();
+
+            return createJsonResponse({
+              success: true,
+              message: 'Profile updated successfully.',
+              csvOld: convertToCsv(dataOld),
+              csvNew: convertToCsv(dataNew)
+            });
+          }
+        }
+      }
+
+      return createJsonResponse({ success: false, error: 'Could not find your profile to update.' });
+    }
+
+    return createJsonResponse({ success: false, error: 'Invalid action.' });
+  } catch (error) {
+    return createJsonResponse({ success: false, error: 'Server error: ' + error.toString() });
+  }
+}
+
 function cleanupExpiredOTPs(otpSheet) {
   try {
     const data = otpSheet.getDataRange().getValues();

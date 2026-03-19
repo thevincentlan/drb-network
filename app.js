@@ -9,6 +9,9 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
         let lastNavigationTime = 0;
         let allowedEmails = new Set();
         let currentSort = 'class'; // 'class' or 'alpha'
+        let currentView = 'dashboard'; // 'dashboard', 'grid', 'timeline', 'map'
+        let leafletMap = null;
+        let mapMarkers = [];
 
 
 
@@ -321,7 +324,10 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
             
             document.getElementById('page-top-bar').style.display = 'none';
             document.getElementById('filter-panel').style.display = 'none';
-            mainView.style.display = 'none';
+            mainView.style.display = 'none'; // Hide the main view container
+            document.getElementById('dashboard-view').style.display = 'none';
+            document.getElementById('grid-view').style.display = 'none';
+            document.getElementById('map-view').style.display = 'none';
             profileView.style.display = 'block';
 
             const imageContainer = profileView.querySelector('.profile-image-container');
@@ -433,11 +439,10 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
         function showMainView() {
             profileView.style.display = 'none';
-            document.getElementById('page-top-bar').style.display = 'flex';
-            document.getElementById('filter-panel').style.display = 'block';
-            mainView.style.display = 'block';
+            document.getElementById('page-top-bar').style.display = '';
+            document.getElementById('filter-panel').style.display = '';
             window.location.hash = '';
-            renderProfiles();
+            switchView(currentView);
         }
 
         function router() {
@@ -1028,6 +1033,12 @@ const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
             });
+
+            // --- View Toggles ---
+            document.getElementById('view-dashboard-btn').addEventListener('click', () => switchView('dashboard'));
+            document.getElementById('view-grid-btn').addEventListener('click', () => switchView('grid'));
+            document.getElementById('view-timeline-btn').addEventListener('click', () => switchView('timeline'));
+            document.getElementById('view-map-btn').addEventListener('click', () => switchView('map'));
 
             // --- Logout ---
             if (logoutBtn) {

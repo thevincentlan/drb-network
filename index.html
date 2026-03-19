@@ -9,6 +9,8 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
 <div id="login-screen">
@@ -48,6 +50,12 @@
                 <button id="sort-by-alpha-btn" class="sort-btn">Alphabetical</button>
             </div>
             <button id="toggle-filters-btn">Filters</button>
+            <div id="view-toggle" class="view-toggle">
+                <button id="view-dashboard-btn" class="view-btn active" title="Dashboard"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg></button>
+                <button id="view-grid-btn" class="view-btn" title="Grid View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M4 11h5V5H4v6zm0 7h5v-6H4v6zm6 0h5v-6h-5v6zm6 0h5v-6h-5v6zm-6-7h5V5h-5v6zm6-6v6h5V5h-5z"/></svg></button>
+                <button id="view-timeline-btn" class="view-btn" title="Timeline View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 18h18v-2H3v2zm0-5h18v-2H3v2zm0-7v2h18V6H3z"/></svg></button>
+                <button id="view-map-btn" class="view-btn" title="Map View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></button>
+            </div>
             <button id="logout-btn" class="logout-btn" title="Log Out">
                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
             </button>
@@ -173,9 +181,38 @@
     
     <div id="app-container">
         <main id="main-content">
-            <div id="main-view">
+            <!-- Dashboard View -->
+            <div id="dashboard-view">
+                <div id="stats-grid">
+                    <div class="stat-card stat-total"><div class="stat-number" id="stat-total">0</div><div class="stat-label">Total Alumni</div></div>
+                    <div class="stat-card stat-cities"><div class="stat-number" id="stat-cities">0</div><div class="stat-label">Cities</div></div>
+                    <div class="stat-card stat-industries"><div class="stat-number" id="stat-industries">0</div><div class="stat-label">Industries</div></div>
+                    <div class="stat-card stat-classes"><div class="stat-number" id="stat-classes">0</div><div class="stat-label">Class Years</div></div>
+                </div>
+                <div id="featured-section">
+                    <h2 class="section-title">✨ Featured Alumni</h2>
+                    <div id="featured-carousel"></div>
+                </div>
+                <div id="recent-section">
+                    <h2 class="section-title">Browse All Alumni</h2>
+                    <div id="dashboard-grid"></div>
+                </div>
+            </div>
+
+            <!-- Grid View -->
+            <div id="grid-view" style="display:none;">
+                <div id="grid-container"></div>
+            </div>
+
+            <!-- Timeline View (original) -->
+            <div id="main-view" style="display:none;">
                  <p id="loading-message">Loading profiles...</p>
                  <div id="profiles-container"></div>
+            </div>
+
+            <!-- Map View -->
+            <div id="map-view" style="display:none;">
+                <div id="map-container"></div>
             </div>
 
             <div id="profile-view" style="display: none;">
