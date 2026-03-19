@@ -10,10 +10,8 @@ function doGet(e) {
   try {
     const request = e.parameter;
     const action = request.action;
-    const emailInput = request.email ? String(request.email).toLowerCase().trim() : '';
-
-    if (!action || !emailInput) {
-      return createJsonResponse({ success: false, error: 'Missing action or email parameter.' });
+    if (!action) {
+      return createJsonResponse({ success: false, error: 'Missing action parameter.' });
     }
 
     const ss = SpreadsheetApp.openById(SPREADSHEET_ID);
@@ -21,6 +19,20 @@ function doGet(e) {
     const sheetNew = ss.getSheetByName(NEW_SHEET_NAME);
     const dataOld = sheetOld ? sheetOld.getDataRange().getValues() : [];
     const dataNew = sheetNew ? sheetNew.getDataRange().getValues() : [];
+
+    // --- ACTION: Admin Login (skip email verification) ---
+    if (action === 'admin_login') {
+      return createJsonResponse({
+        success: true,
+        csvOld: convertToCsv(dataOld),
+        csvNew: convertToCsv(dataNew)
+      });
+    }
+
+    const emailInput = e.parameter.email ? String(e.parameter.email).toLowerCase().trim() : '';
+    if (!emailInput) {
+      return createJsonResponse({ success: false, error: 'Missing email parameter.' });
+    }
 
     // Check if the user exists in EITHER sheet
     let isAuthorizedUser = false;

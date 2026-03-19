@@ -1,6 +1,6 @@
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6RsDDG3fZAA_MIWiz2ogijCmBAFWvbImzaLJePk59yJlQE-yjGL5KXRA/exec';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
-const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
+const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CONFIG_ADMIN_PASSWORD : null;
 
 // --- This URL points to your Google Sheet ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTHcndXfYMgUm1eRG0IvoReaBxYowGhiay23WbY9JegVZkTlV1TI6_xFZY-GJq8UZEEMOdACI-2nOIb/pub?gid=370192004&single=true&output=csv';
@@ -13,6 +13,7 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
         let currentView = 'dashboard'; // 'dashboard', 'grid', 'timeline', 'map'
         let leafletMap = null;
         let mapMarkers = [];
+        let geocodeCache = {};
 
 
 
@@ -483,6 +484,13 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
             }
         }
 
+        function renderCurrentView() {
+            if (currentView === 'dashboard') renderDashboard();
+            else if (currentView === 'grid') renderGridView();
+            else if (currentView === 'timeline') renderProfiles();
+            else if (currentView === 'map') renderMapView();
+        }
+
         // --- Dashboard ---
         function renderDashboard() {
             if (allAlumniData.length === 0) return;
@@ -569,8 +577,8 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
                 });
             }
             const sorted = currentSort === 'alpha'
-                ? [...filtered].sort((a, b) => `${a.firstName}`.localeCompare(`${b.firstName}`))
-                : [...filtered].sort((a, b) => (b.gradYear || '').localeCompare(a.gradYear || ''));
+                ? [...filtered].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
+                : [...filtered].sort((a, b) => (a.gradYear || '').localeCompare(b.gradYear || '') || `${a.firstName}`.localeCompare(`${b.firstName}`));
 
             container.innerHTML = sorted.map(a => `
                 <a href="#profile=${a.id}" class="grid-card">
@@ -616,18 +624,132 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
             'detroit': [42.3314, -83.0458], 'st. louis': [38.6270, -90.1994],
             'san jose': [37.3382, -121.8863], 'fort worth': [32.7555, -97.3308],
             'wilmington': [34.2257, -77.9447], 'fayetteville': [35.0527, -78.8784],
-            'winston-salem': [36.0999, -80.2442]
+            'winston-salem': [36.0999, -80.2442],
+            // Additional cities
+            'san marcos': [29.8833, -97.9414], 'fort walton beach': [30.4058, -86.6187],
+            'arlington': [32.7357, -97.1081], 'plano': [33.0198, -96.6989],
+            'irvine': [33.6846, -117.8265], 'scottsdale': [33.4942, -111.9261],
+            'savannah': [32.0809, -81.0912], 'charleston': [32.7765, -79.9311],
+            'annapolis': [38.9784, -76.4922], 'norfolk': [36.8508, -76.2859],
+            'hampton': [37.0299, -76.3452], 'newport news': [37.0871, -76.4730],
+            'virginia beach': [36.8529, -75.9780], 'chesapeake': [36.7682, -76.2875],
+            'alexandria': [38.8048, -77.0469], 'fairfax': [38.8462, -77.3064],
+            'silver spring': [38.9907, -77.0261], 'bethesda': [38.9847, -77.0947],
+            'columbia': [34.0007, -81.0348], 'greenville': [34.8526, -82.3940],
+            'birmingham': [33.5207, -86.8025], 'huntsville': [34.7304, -86.5861],
+            'mobile': [30.6954, -88.0399], 'montgomery': [32.3792, -86.3077],
+            'baton rouge': [30.4515, -91.1871], 'shreveport': [32.5252, -93.7502],
+            'little rock': [34.7465, -92.2896], 'knoxville': [35.9606, -83.9207],
+            'chattanooga': [35.0456, -85.3097], 'murfreesboro': [35.8456, -86.3903],
+            'clarksville': [36.5298, -87.3595], 'jackson': [32.2988, -90.1848],
+            'tupelo': [34.2576, -88.7034], 'oxford': [34.3665, -89.5192],
+            'tuscaloosa': [33.2098, -87.5692], 'auburn': [32.6099, -85.4808],
+            'roanoke': [37.2710, -79.9414], 'lynchburg': [37.4138, -79.1422],
+            'harrisburg': [40.2732, -76.8867], 'allentown': [40.6023, -75.4714],
+            'newark': [40.7357, -74.1724], 'jersey city': [40.7178, -74.0431],
+            'stamford': [41.0534, -73.5387], 'bridgeport': [41.1792, -73.1894],
+            'hartford': [41.7658, -72.6734], 'new haven': [41.3083, -72.9279],
+            'providence': [41.8240, -71.4128], 'springfield': [42.1015, -72.5898],
+            'worcester': [42.2626, -71.8023], 'buffalo': [42.8864, -78.8784],
+            'rochester': [43.1566, -77.6088], 'syracuse': [43.0481, -76.1474],
+            'albany': [42.6526, -73.7562], 'trenton': [40.2171, -74.7429],
+            'wilmington de': [39.7391, -75.5392], 'dover': [39.1582, -75.5244],
+            'st. petersburg': [27.7676, -82.6403], 'fort lauderdale': [26.1224, -80.1373],
+            'west palm beach': [26.7153, -80.0534], 'tallahassee': [30.4383, -84.2807],
+            'gainesville': [29.6516, -82.3248], 'pensacola': [30.4213, -87.2169],
+            'sarasota': [27.3364, -82.5307], 'fort myers': [26.6406, -81.8723],
+            'naples': [26.1420, -81.7948], 'daytona beach': [29.2108, -81.0228],
+            'ocala': [29.1872, -82.1401], 'lakeland': [28.0395, -81.9498],
+            'macon': [32.8407, -83.6324], 'athens': [33.9519, -83.3576],
+            'augusta': [33.4735, -81.9748], 'marietta': [33.9526, -84.5499],
+            'alpharetta': [34.0754, -84.2941], 'decatur': [33.7748, -84.2963],
+            'sandy springs': [33.9304, -84.3733], 'roswell': [34.0232, -84.3616],
+            'san bernardino': [34.1083, -117.2898], 'riverside': [33.9533, -117.3962],
+            'long beach': [33.7701, -118.1937], 'oakland': [37.8044, -122.2712],
+            'bakersfield': [35.3733, -119.0187], 'anaheim': [33.8366, -117.9143],
+            'santa ana': [33.7455, -117.8677], 'stockton': [37.9577, -121.2908],
+            'chula vista': [32.6401, -117.0842], 'st paul': [44.9537, -93.0900],
+            'des moines': [41.5868, -93.6250], 'madison': [43.0731, -89.4012],
+            'boise': [43.6150, -116.2023], 'salt lake city': [40.7608, -111.8910],
+            'spokane': [47.6588, -117.4260], 'tacoma': [47.2529, -122.4443],
+            'eugene': [44.0521, -123.0868], 'salem': [44.9429, -123.0351],
+            'reno': [39.5296, -119.8138], 'henderson': [36.0395, -114.9817],
+            'mesa': [33.4152, -111.8315], 'chandler': [33.3062, -111.8413],
+            'gilbert': [33.3528, -111.7890], 'glendale': [33.5387, -112.1860],
+            'tempe': [33.4255, -111.9400], 'peoria': [33.5806, -112.2374],
+            'laredo': [27.5036, -99.5076], 'lubbock': [33.5779, -101.8552],
+            'amarillo': [35.2220, -101.8313], 'el paso': [31.7619, -106.4850],
+            'corpus christi': [27.8006, -97.3964], 'mcallen': [26.2034, -98.2300],
+            'brownsville': [25.9017, -97.4975], 'midland': [31.9973, -102.0779],
+            'waco': [31.5493, -97.1467], 'college station': [30.6280, -96.3344],
+            'round rock': [30.5083, -97.6789], 'tyler': [32.3513, -95.3011],
+            'beaumont': [30.0802, -94.1266], 'abilene': [32.4487, -99.7331],
+            'pasadena': [29.6911, -95.2091], 'frisco': [33.1507, -96.8236],
+            'mckinney': [33.1972, -96.6398], 'denton': [33.2148, -97.1331],
+            'killeen': [31.1171, -97.7278], 'carrollton': [32.9537, -96.8900],
+            'conroe': [30.3119, -95.4561], 'new braunfels': [29.7030, -98.1245],
+            'edinburg': [26.3017, -98.1634], 'irving': [32.8140, -96.9489],
+            'garland': [32.9126, -96.6389], 'grand prairie': [32.7460, -96.9978],
+            'wichita falls': [33.9137, -98.4934], 'san angelo': [31.4638, -100.4370],
+            'sugar land': [29.6197, -95.6349], 'pearland': [29.5636, -95.2860],
+            'allen': [33.1032, -96.6706], 'league city': [29.5075, -95.0949],
+            'longview': [32.5007, -94.7405], 'mansfield': [32.5632, -97.1417],
+            'cedar park': [30.5052, -97.8203], 'pflugerville': [30.4394, -97.6200],
+            'temple': [31.0982, -97.3428], 'bryan': [30.6744, -96.3698],
+            'missouri city': [29.6186, -95.5377], 'baytown': [29.7355, -94.9774],
+            'pharr': [26.1948, -98.1836], 'flower mound': [33.0146, -97.0970],
+            'north richland hills': [32.8342, -97.2289], 'harlingen': [26.1906, -97.6961],
+            'rowlett': [32.9029, -96.5637], 'euless': [32.8371, -97.0820],
+            'desoto': [32.5899, -96.8570], 'grapevine': [32.9343, -97.0781],
+            'cary': [35.7915, -78.7811], 'high point': [35.9557, -80.0053],
+            'concord': [35.4088, -80.5795], 'burlington': [36.0957, -79.4378],
+            'gastonia': [35.2621, -81.1873], 'rocky mount': [35.9382, -77.7905],
+            'greenville nc': [35.6127, -77.3664], 'huntersville': [35.4107, -80.8429],
+            'apex': [35.7327, -78.8503], 'mooresville': [35.5849, -80.8101],
+            'kannapolis': [35.4874, -80.6217], 'cornelius': [35.4868, -80.8601],
+            'indian trail': [35.0768, -80.6692], 'wake forest': [35.9799, -78.5097],
+            'holly springs': [35.6513, -78.8336], 'matthews': [35.1168, -80.7237],
+            'asheboro': [35.7076, -79.8134], 'leland': [34.2571, -78.0453],
+            'clemmons': [36.0210, -80.3820], 'kernersville': [36.1198, -80.0737],
+            'harrisonburg': [38.4496, -78.8689], 'charlottesville': [38.0293, -78.4767],
+            'fredericksburg': [38.3032, -77.4605], 'manassas': [38.7509, -77.4753],
+            'leesburg': [39.1157, -77.5636], 'staunton': [38.1496, -79.0717],
+            'danville': [36.5860, -79.3930], 'suffolk': [36.7282, -76.5836],
+            'hampton roads': [36.9897, -76.4280]
         };
 
-        function renderMapView() {
+        async function geocodeCity(cityName) {
+            const key = cityName.toLowerCase().trim();
+            if (geocodeCache[key]) return geocodeCache[key];
+            if (geocodeCache[key] === null) return null; // previously failed
+            try {
+                const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(cityName)}&limit=1&countrycodes=us`, {
+                    headers: { 'User-Agent': 'DRBNetworkDatabase/1.0' }
+                });
+                const data = await resp.json();
+                if (data && data.length > 0) {
+                    const coords = [parseFloat(data[0].lat), parseFloat(data[0].lon)];
+                    geocodeCache[key] = coords;
+                    return coords;
+                }
+            } catch(e) {
+                console.warn('Geocoding failed for:', cityName, e);
+            }
+            geocodeCache[key] = null;
+            return null;
+        }
+
+        async function renderMapView() {
             const container = document.getElementById('map-container');
             if (!container) return;
             if (!leafletMap) {
-                leafletMap = L.map(container).setView([37.0, -96.0], 4);
-                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                    attribution: '© OpenStreetMap contributors',
-                    maxZoom: 18
+                leafletMap = L.map(container, { zoomControl: false }).setView([35.5, -80.0], 5);
+                L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+                    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
+                    subdomains: 'abcd',
+                    maxZoom: 19
                 }).addTo(leafletMap);
+                L.control.zoom({ position: 'bottomright' }).addTo(leafletMap);
             }
             leafletMap.invalidateSize();
 
@@ -639,27 +761,78 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
             const cityGroups = {};
             allAlumniData.forEach(a => {
                 if (!a.city) return;
-                const cityKey = a.city.toLowerCase().replace(/,.*$/, '').trim();
+                const cityKey = a.city.toLowerCase().replace(/,\s*(\w{2})$/i, '').replace(/,.*$/, '').trim();
                 if (!cityGroups[cityKey]) cityGroups[cityKey] = { name: a.city, alumni: [] };
                 cityGroups[cityKey].alumni.push(a);
             });
 
-            Object.entries(cityGroups).forEach(([key, group]) => {
-                const coords = CITY_COORDS[key];
-                if (!coords) return;
+            // Place markers — use hardcoded coords first, then geocode
+            const entries = Object.entries(cityGroups);
+            const geocodePromises = [];
 
-                const marker = L.circleMarker(coords, {
-                    radius: Math.min(6 + group.alumni.length * 2, 20),
-                    fillColor: '#7BAFD4',
-                    color: '#4a7fa0',
-                    weight: 2,
-                    fillOpacity: 0.8
+            for (const [key, group] of entries) {
+                let coords = CITY_COORDS[key];
+                if (coords) {
+                    addMapMarker(coords, group);
+                } else {
+                    // Queue for geocoding
+                    geocodePromises.push(
+                        geocodeCity(group.name).then(geoCoords => {
+                            if (geoCoords) addMapMarker(geoCoords, group);
+                        })
+                    );
+                }
+            }
+
+            // Wait for all geocoding to complete
+            if (geocodePromises.length > 0) {
+                await Promise.allSettled(geocodePromises);
+            }
+
+            // Add a summary control
+            updateMapSummary();
+        }
+
+        function addMapMarker(coords, group) {
+            const count = group.alumni.length;
+            const radius = Math.min(8 + count * 2.5, 28);
+
+            const marker = L.circleMarker(coords, {
+                radius: radius,
+                fillColor: '#7BAFD4',
+                color: 'rgba(123, 175, 212, 0.4)',
+                weight: 2,
+                fillOpacity: 0.85
+            }).addTo(leafletMap);
+
+            // Add count label for groups > 1
+            if (count > 1) {
+                const label = L.marker(coords, {
+                    icon: L.divIcon({
+                        className: 'map-count-label',
+                        html: `<span>${count}</span>`,
+                        iconSize: [24, 24],
+                        iconAnchor: [12, 12]
+                    })
                 }).addTo(leafletMap);
+                mapMarkers.push(label);
+            }
 
-                const names = group.alumni.map(a => `<a href="#profile=${a.id}" style="color:#4a7fa0;">${a.firstName} ${a.lastName}</a>`).join('<br>');
-                marker.bindPopup(`<strong>${group.name}</strong> (${group.alumni.length})<br>${names}`);
-                mapMarkers.push(marker);
-            });
+            const names = group.alumni.map(a => `<a href="#profile=${a.id}" style="color:#7BAFD4;text-decoration:none;">${a.firstName} ${a.lastName}</a>`).join('<br>');
+            marker.bindPopup(`<div style="font-family:Inter,sans-serif;"><strong style="font-size:1.05em;">${group.name}</strong> <span style="color:#6c757d;">(${count})</span><br><div style="margin-top:6px;line-height:1.6;">${names}</div></div>`, { maxWidth: 250 });
+            mapMarkers.push(marker);
+        }
+
+        function updateMapSummary() {
+            const existing = document.querySelector('.map-summary');
+            if (existing) existing.remove();
+
+            const total = mapMarkers.filter(m => m instanceof L.CircleMarker).length;
+            const totalAlumni = allAlumniData.filter(a => a.city).length;
+            const summaryDiv = document.createElement('div');
+            summaryDiv.className = 'map-summary';
+            summaryDiv.innerHTML = `<span>${total} cities</span> · <span>${totalAlumni} alumni mapped</span>`;
+            document.getElementById('map-view').appendChild(summaryDiv);
         }
 
         function router() {
@@ -1019,8 +1192,12 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
                                 }
                             }
 
+                            const baseId = `${firstName.toLowerCase().replace(/\W/g, '-')}-${lastName.toLowerCase().replace(/\W/g, '-')}-${gradYear}`;
+                            let uniqueId = baseId;
+                            let idCounter = 1;
+                            while (allAlumniData.some(a => a.id === uniqueId)) { uniqueId = `${baseId}-${idCounter++}`; }
                             allAlumniData.push({
-                                id: `${firstName.toLowerCase().replace(/\W/g, '-')}-${lastName.toLowerCase().replace(/\W/g, '-')}-${gradYear}-${Math.random().toString(36).substr(2, 5)}`,
+                                id: uniqueId,
                                 firstName: escapeHTML(firstName), lastName: escapeHTML(lastName), gradYear: escapeHTML(gradYear), photoUrl: getCell('photoUrl'), drbPhotoUrl: getCell('drbPhotoUrl'), city: escapeHTML(cityRaw), state: state,
                                 occupation: escapeHTML(occupationRaw), industry: normalizedIndustry, about: escapeHTML(getCell('about')), tenure: escapeHTML(getCell('tenure')), favoriteStep: escapeHTML(getCell('favoriteStep')),
                                 awards: awards.map(escapeHTML), greekAffiliation: normalizedGreek,
@@ -1153,33 +1330,33 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
                 loginBtn.disabled = true;
 
                 // --- Admin Bypass ---
-                if (rawInput === SECRET_ADMIN_PASSWORD) {
+                if (SECRET_ADMIN_PASSWORD && rawInput === SECRET_ADMIN_PASSWORD) {
                     loginMessage.textContent = 'Admin access granted. Loading database...';
-                    // Fetch the public CSV directly as an admin bypass
-                    Papa.parse(googleSheetUrl, {
-                        download: true,
-                        header: false,
-                        skipEmptyLines: true,
-                        complete: function(results) {
-                            const csvOld = Papa.unparse(results.data); // Mocking old sheet data as same for now
-                            const csvNew = Papa.unparse(results.data);
+                    loginMessage.classList.remove('error');
+                    fetch(`${APPS_SCRIPT_URL}?action=admin_login&email=admin`, { method: 'GET' })
+                    .then(response => response.ok ? response.json() : Promise.reject('Network error'))
+                    .then(data => {
+                        if (data.success) {
                             currentUserEmail = 'admin@drb.network';
-                            loadDataAndRender(csvOld, csvNew);
+                            loadDataAndRender(data.csvOld, data.csvNew);
                             document.body.classList.add('logged-in');
                             sessionStorage.setItem('drb_session', JSON.stringify({
-                                csvOld: csvOld,
-                                csvNew: csvNew,
+                                csvOld: data.csvOld,
+                                csvNew: data.csvNew,
                                 email: currentUserEmail,
                                 timestamp: Date.now()
                             }));
                             showMainView();
-                            loginBtn.disabled = false;
-                        },
-                        error: function(err) {
-                            loginMessage.textContent = 'Admin login failed: ' + err;
+                        } else {
+                            loginMessage.textContent = 'Admin login failed: ' + (data.error || 'Unknown error');
                             loginMessage.classList.add('error');
-                            loginBtn.disabled = false;
                         }
+                        loginBtn.disabled = false;
+                    })
+                    .catch(err => {
+                        loginMessage.textContent = 'Admin login failed: ' + err;
+                        loginMessage.classList.add('error');
+                        loginBtn.disabled = false;
                     });
                     return;
                 }
@@ -1477,13 +1654,13 @@ const SECRET_ADMIN_PASSWORD = 'drb-admin'; // User's requested bypass password
                 currentSort = 'class';
                 sortByClassBtn.classList.add('active');
                 sortByAlphaBtn.classList.remove('active');
-                renderProfiles();
+                renderCurrentView();
             });
             sortByAlphaBtn.addEventListener('click', () => {
                 if (currentSort === 'alpha') return;
                 currentSort = 'alpha';
                 sortByAlphaBtn.classList.add('active');
                 sortByClassBtn.classList.remove('active');
-                renderProfiles();
+                renderCurrentView();
             });
         });
