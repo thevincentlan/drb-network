@@ -368,6 +368,7 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
+            object-position: top center;
             transition: opacity 0.5s ease-in-out;
         }
         
@@ -413,7 +414,7 @@
         .detail-section li small { color: var(--medium-grey); }
         .detail-section p { color: var(--medium-grey); line-height: 1.6; white-space: pre-wrap; }
         .profile-image-container { position: relative; width: 100%; height: 250px; margin-bottom: 20px; }
-        .profile-image-container img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; border-radius: 12px; transition: opacity 0.5s ease-in-out; }
+        .profile-image-container img { position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; object-position: top center; border-radius: 12px; transition: opacity 0.5s ease-in-out; }
         .profile-image-container .back-face { opacity: 0; }
         .profile-image-container:not(.no-hover):hover .back-face { opacity: 1; }
         .profile-image-container:not(.no-hover):hover .front-face { opacity: 0; }
@@ -922,11 +923,26 @@
             box-shadow: 0 12px 40px rgba(0,0,0,0.12);
         }
 
-        .featured-card img {
+        .featured-img-wrap {
+            position: relative;
             width: 100%;
             height: 260px;
-            object-fit: cover;
+            overflow: hidden;
         }
+
+        .featured-img-wrap img {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: top center;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .featured-img-wrap .back-face { opacity: 0; }
+        .featured-card:not(.no-swap):hover .featured-img-wrap .back-face { opacity: 1; }
+        .featured-card:not(.no-swap):hover .featured-img-wrap .front-face { opacity: 0; }
 
         .featured-info {
             padding: 18px;
@@ -976,6 +992,7 @@
             height: 42px;
             border-radius: 50%;
             object-fit: cover;
+            object-position: top center;
         }
 
         .dash-card-info {
@@ -1022,11 +1039,26 @@
             box-shadow: 0 8px 25px rgba(0,0,0,0.1);
         }
 
-        .grid-card-img img {
+        .grid-card-img {
+            position: relative;
             width: 100%;
             height: 200px;
-            object-fit: cover;
+            overflow: hidden;
         }
+
+        .grid-card-img img {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            object-position: top center;
+            transition: opacity 0.5s ease-in-out;
+        }
+
+        .grid-card-img .back-face { opacity: 0; }
+        .grid-card:not(.no-swap):hover .grid-card-img .back-face { opacity: 1; }
+        .grid-card:not(.no-swap):hover .grid-card-img .front-face { opacity: 0; }
 
         .grid-card-body {
             padding: 14px;

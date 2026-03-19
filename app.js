@@ -518,9 +518,14 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             const carousel = document.getElementById('featured-carousel');
             if (carousel) {
-                carousel.innerHTML = featured.map(a => `
-                    <a href="#profile=${a.id}" class="featured-card">
-                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" onerror="this.src='${defaultProfilePic}'">
+                carousel.innerHTML = featured.map(a => {
+                    const hasSwap = !!a.drbPhotoUrl;
+                    return `
+                    <a href="#profile=${a.id}" class="featured-card${hasSwap ? '' : ' no-swap'}">
+                        <div class="featured-img-wrap">
+                            <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" onerror="this.src='${defaultProfilePic}'">
+                            ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" onerror="this.src='${defaultProfilePic}'">` : ''}
+                        </div>
                         <div class="featured-info">
                             <h3>${a.firstName} ${a.lastName}</h3>
                             <p>Class of ${a.gradYear}</p>
@@ -528,7 +533,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                             ${a.city ? `<p class="featured-city">📍 ${a.city}</p>` : ''}
                         </div>
                     </a>
-                `).join('');
+                `}).join('');
             }
 
             // Browse grid — show all alumni as small cards (respects search and sort)
@@ -595,9 +600,10 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 : [...filtered].sort((a, b) => (a.gradYear || '').localeCompare(b.gradYear || '') || `${a.firstName}`.localeCompare(`${b.firstName}`));
 
             container.innerHTML = sorted.map(a => `
-                <a href="#profile=${a.id}" class="grid-card">
+                <a href="#profile=${a.id}" class="grid-card${a.drbPhotoUrl ? '' : ' no-swap'}">
                     <div class="grid-card-img">
-                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
+                        <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
+                        ${a.drbPhotoUrl ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" onerror="this.src='${defaultProfilePic}'">` : ''}
                     </div>
                     <div class="grid-card-body">
                         <h3>${a.firstName} ${a.lastName}</h3>
