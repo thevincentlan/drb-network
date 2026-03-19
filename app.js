@@ -412,9 +412,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             
             document.getElementById('page-top-bar').style.display = 'none';
             document.getElementById('filter-panel').style.display = 'none';
-            mainView.style.display = 'none'; // Hide the main view container
             document.getElementById('dashboard-view').style.display = 'none';
-            document.getElementById('grid-view').style.display = 'none';
             document.getElementById('map-view').style.display = 'none';
             const memView = document.getElementById('memories-view');
             if (memView) memView.style.display = 'none';
