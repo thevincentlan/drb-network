@@ -478,3 +478,323 @@
         .year-color-3 { --year-color: var(--year-orange); }
         .year-header.year-color-0, .year-header.year-color-1, .year-header.year-color-2, .year-header.year-color-3 { border-bottom-color: var(--year-color); }
         .profile-card.year-color-0, .profile-card.year-color-1, .profile-card.year-color-2, .profile-card.year-color-3 { border-top-color: var(--year-color); }
+
+        /* --- Search Bar --- */
+        .header-search {
+            flex: 1;
+            max-width: 320px;
+            margin: 0 15px;
+        }
+
+        #search-input {
+            width: 100%;
+            padding: 10px 16px;
+            font-size: 0.9em;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--light-grey);
+            color: var(--dark-grey);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-sizing: border-box;
+        }
+
+        #search-input:focus {
+            border-color: var(--carolina-blue);
+            box-shadow: 0 0 0 3px rgba(123, 175, 212, 0.2);
+            background-color: var(--white);
+        }
+
+        #search-input::placeholder {
+            color: var(--medium-grey);
+        }
+
+        /* --- Logout Button --- */
+        .logout-btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 38px;
+            height: 38px;
+            padding: 0;
+            background-color: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            cursor: pointer;
+            color: var(--medium-grey);
+            transition: all 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background-color: #d9534f;
+            border-color: #d9534f;
+            color: var(--white);
+        }
+
+        /* --- Instagram Card --- */
+        .instagram-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 18px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, #833ab4 0%, #fd1d1d 50%, #fcb045 100%);
+            color: white;
+            text-decoration: none;
+            transition: transform 0.2s, box-shadow 0.2s;
+            margin-top: 15px;
+        }
+
+        .instagram-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(131, 58, 180, 0.3);
+        }
+
+        .instagram-card svg {
+            width: 24px;
+            height: 24px;
+            fill: white;
+            flex-shrink: 0;
+        }
+
+        .instagram-card .ig-info {
+            flex-grow: 1;
+        }
+
+        .instagram-card .ig-handle {
+            font-weight: 600;
+            font-size: 1em;
+        }
+
+        .instagram-card .ig-cta {
+            font-size: 0.8em;
+            opacity: 0.85;
+        }
+
+        .instagram-card .ig-arrow {
+            font-size: 1.2em;
+            opacity: 0.7;
+        }
+
+        /* --- Mobile search --- */
+        @media (max-width: 768px) {
+            .header-search {
+                display: none;
+            }
+
+            body.logged-in .header-search {
+                display: block;
+                position: fixed;
+                top: 60px;
+                left: 0;
+                right: 0;
+                padding: 10px 15px;
+                background-color: var(--white);
+                border-bottom: 1px solid var(--border-color);
+                z-index: 999;
+                max-width: none;
+                margin: 0;
+            }
+
+            body.logged-in {
+                padding-top: 110px;
+            }
+
+            .logout-btn {
+                width: 32px;
+                height: 32px;
+            }
+
+            .logout-btn svg {
+                width: 14px;
+                height: 14px;
+            }
+        }
+
+        /* --- Edit Profile Button --- */
+        .edit-profile-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 15px;
+            padding: 10px 20px;
+            background-color: var(--carolina-blue);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .edit-profile-btn:hover {
+            background-color: #5a8fb5;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(123, 175, 212, 0.4);
+        }
+
+        .edit-profile-btn svg {
+            fill: white;
+        }
+
+        /* --- Modal --- */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 10000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .modal-content {
+            background-color: var(--white);
+            border-radius: 16px;
+            width: 100%;
+            max-width: 520px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+            animation: modalSlideIn 0.3s ease;
+        }
+
+        @keyframes modalSlideIn {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .modal-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 24px 28px 16px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .modal-header h2 {
+            margin: 0;
+            font-size: 1.3em;
+            color: var(--dark-grey);
+        }
+
+        .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.8em;
+            color: var(--medium-grey);
+            cursor: pointer;
+            padding: 0;
+            line-height: 1;
+            transition: color 0.2s;
+        }
+
+        .modal-close:hover {
+            color: var(--dark-grey);
+        }
+
+        #edit-profile-form {
+            padding: 24px 28px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 0.85em;
+            font-weight: 600;
+            color: var(--dark-grey);
+            margin-bottom: 6px;
+        }
+
+        .form-group input,
+        .form-group textarea {
+            width: 100%;
+            padding: 10px 14px;
+            font-size: 0.95em;
+            font-family: 'Inter', sans-serif;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background-color: var(--light-grey);
+            color: var(--dark-grey);
+            outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+            box-sizing: border-box;
+        }
+
+        .form-group input:focus,
+        .form-group textarea:focus {
+            border-color: var(--carolina-blue);
+            box-shadow: 0 0 0 3px rgba(123, 175, 212, 0.15);
+            background-color: var(--white);
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 24px;
+            padding-top: 18px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .btn-secondary {
+            padding: 10px 22px;
+            background-color: transparent;
+            color: var(--medium-grey);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-secondary:hover {
+            background-color: var(--light-grey);
+            color: var(--dark-grey);
+        }
+
+        .btn-primary {
+            padding: 10px 22px;
+            background-color: var(--carolina-blue);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 0.9em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn-primary:hover {
+            background-color: #5a8fb5;
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .edit-message {
+            text-align: center;
+            margin-top: 12px;
+            font-size: 0.9em;
+            min-height: 20px;
+        }
+
+        .edit-message.success {
+            color: #28a745;
+        }
+
+        .edit-message.error {
+            color: #d9534f;
+        }

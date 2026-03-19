@@ -1,4 +1,5 @@
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6RsDDG3fZAA_MIWiz2ogijCmBAFWvbImzaLJePk59yJlQE-yjGL5KXRA/exec';
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 // --- This URL points to your Google Sheet ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTHcndXfYMgUm1eRG0IvoReaBxYowGhiay23WbY9JegVZkTlV1TI6_xFZY-GJq8UZEEMOdACI-2nOIb/pub?gid=370192004&single=true&output=csv';
@@ -57,7 +58,17 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                 location: { active: document.getElementById('location-master-filter').checked, values: new Set(Array.from(document.querySelectorAll('#location-options-container input:checked')).map(cb => cb.value)) }
             };
 
-            const filteredAlumni = allAlumniData.filter(alum => {
+            // Apply name search filter first
+            let searchFiltered = allAlumniData;
+            if (currentSearchQuery) {
+                searchFiltered = allAlumniData.filter(alum => {
+                    const fullName = `${alum.firstName} ${alum.lastName}`.toLowerCase();
+                    const reversed = `${alum.lastName} ${alum.firstName}`.toLowerCase();
+                    return fullName.includes(currentSearchQuery) || reversed.includes(currentSearchQuery);
+                });
+            }
+
+            const filteredAlumni = searchFiltered.filter(alum => {
                 if (activeFilters.classYears.active && activeFilters.classYears.values.size > 0) {
                     if (!activeFilters.classYears.values.has(alum.gradYear)) return false;
                 }
@@ -177,7 +188,14 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                             if (alumnus.instagramUrl) { contactHtml += `<li>${socialIcons.instagram}<div><a href="${alumnus.instagramUrl}" target="_blank" rel="noopener noreferrer">${alumnus.instagramHandle}</a></div></li>`; }
                             alumnus.socialMedia.forEach(social => { const icon = socialIcons[social.type.toLowerCase()] || socialIcons.social; contactHtml += `<li>${icon}<div><a href="${social.url}" target="_blank" rel="noopener noreferrer">${social.display}</a></div></li>` });
                             alumnus.websites.forEach(site => { contactHtml += `<li>${socialIcons.website}<div><a href="${site.url}" target="_blank" rel="noopener noreferrer">${site.display} (${site.type})</a></div></li>` });
-                            contactHtml += '</ul></div>';
+                            contactHtml += '</ul>';
+                            if (alumnus.instagramUrl) {
+                                contactHtml += `<a href="${alumnus.instagramUrl}" target="_blank" rel="noopener noreferrer" class="instagram-card">
+                                    ${socialIcons.instagram}
+                                    <div class="ig-info"><div class="ig-handle">${alumnus.instagramHandle}</div><div class="ig-cta">View on Instagram</div></div>
+                                    <span class="ig-arrow">→</span></a>`;
+                            }
+                            contactHtml += '</div>';
                         }
                         
                         cardDiv.innerHTML = `
@@ -323,6 +341,17 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
             drbStatsContainer.innerHTML = '';
             contactContainer.innerHTML = '';
 
+            // Add "Edit My Profile" button if this is the logged-in user's profile
+            const existingEditBtn = profileView.querySelector('.edit-profile-btn');
+            if (existingEditBtn) existingEditBtn.remove();
+            if (alumnus.email && currentUserEmail && alumnus.email.toLowerCase().includes(currentUserEmail.toLowerCase())) {
+                const editBtn = document.createElement('button');
+                editBtn.className = 'edit-profile-btn';
+                editBtn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg> Edit My Profile';
+                editBtn.addEventListener('click', () => openEditModal(alumnus));
+                profileView.querySelector('#profile-main').appendChild(editBtn);
+            }
+
             const createDetailSection = (title, data) => {
                 if (!data || data.length === 0) return '';
                 let content;
@@ -352,6 +381,17 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                 contactHtml += `<li>${socialIcons.website}<a href="${site.url}" target="_blank" rel="noopener noreferrer">${site.display} (${site.type})</a></li>`
             });
             contactHtml += '</ul>';
+            // Instagram preview card
+            if (alumnus.instagramUrl) {
+                contactHtml += `<a href="${alumnus.instagramUrl}" target="_blank" rel="noopener noreferrer" class="instagram-card">
+                    ${socialIcons.instagram}
+                    <div class="ig-info">
+                        <div class="ig-handle">${alumnus.instagramHandle}</div>
+                        <div class="ig-cta">View Profile on Instagram</div>
+                    </div>
+                    <span class="ig-arrow">→</span>
+                </a>`;
+            }
             if (contactHtml !== '<ul></ul>') contactContainer.innerHTML = contactHtml;
 
             detailsContainer.innerHTML += createDetailSection('Occupation / Industry', alumnus.occupation);
@@ -497,6 +537,9 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
             const loginEmailInput = document.getElementById('login-email');
             const loginMessage = document.getElementById('login-message');
             const loadingMessage = document.getElementById('loading-message');
+            const logoutBtn = document.getElementById('logout-btn');
+            const searchInput = document.getElementById('search-input');
+            let currentSearchQuery = '';
 
 
 
@@ -845,7 +888,25 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                     });
                 }
             
-            loginBtn.disabled = false; // Enable login button initially since we don't load DB on start
+            // --- Session Restore ---
+            const cachedSession = sessionStorage.getItem('drb_session');
+            if (cachedSession) {
+                try {
+                    const session = JSON.parse(cachedSession);
+                    if (Date.now() - session.timestamp < SESSION_TTL_MS) {
+                        document.body.classList.add('logged-in');
+                        currentUserEmail = session.email || '';
+                        loadDataAndRender(session.csvOld, session.csvNew);
+                        router();
+                    } else {
+                        sessionStorage.removeItem('drb_session');
+                    }
+                } catch(e) {
+                    sessionStorage.removeItem('drb_session');
+                }
+            }
+
+            loginBtn.disabled = false;
             loginMessage.textContent = '';
 
             const emailStep = document.getElementById('email-step');
@@ -914,8 +975,14 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                 .then(data => {
                     if (data.success) {
                         document.body.classList.add('logged-in');
+                        sessionStorage.setItem('drb_session', JSON.stringify({
+                            csvOld: data.csvOld,
+                            csvNew: data.csvNew,
+                            email: currentUserEmail,
+                            timestamp: Date.now()
+                        }));
                         loadDataAndRender(data.csvOld, data.csvNew);
-                        router(); // Initial render after login
+                        router();
                     } else {
                         otpMessage.textContent = data.error || 'Invalid code.';
                         otpMessage.classList.add('error');
@@ -960,6 +1027,126 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                 if (isOpening) {
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                 }
+            });
+
+            // --- Logout ---
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', () => {
+                    sessionStorage.removeItem('drb_session');
+                    document.body.classList.remove('logged-in');
+                    document.body.classList.remove('filters-visible');
+                    allAlumniData = [];
+                    profilesContainer.innerHTML = '';
+                    document.getElementById('email-step').style.display = 'block';
+                    document.getElementById('otp-step').style.display = 'none';
+                    document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure 6-digit access code.';
+                    loginEmailInput.value = '';
+                    loginMessage.textContent = '';
+                });
+            }
+
+            // --- Global Search ---
+            if (searchInput) {
+                let searchDebounce;
+                searchInput.addEventListener('input', () => {
+                    clearTimeout(searchDebounce);
+                    searchDebounce = setTimeout(() => {
+                        currentSearchQuery = searchInput.value.trim().toLowerCase();
+                        renderProfiles();
+                    }, 200);
+                });
+            }
+
+            // --- Edit Profile Modal ---
+            const editModal = document.getElementById('edit-modal-overlay');
+            const editForm = document.getElementById('edit-profile-form');
+            const editMessage = document.getElementById('edit-message');
+            let editingAlumnus = null;
+
+            window.openEditModal = function(alumnus) {
+                editingAlumnus = alumnus;
+                document.getElementById('edit-city').value = alumnus.city || '';
+                document.getElementById('edit-occupation').value = alumnus.occupation || '';
+                document.getElementById('edit-phone').value = alumnus.phone || '';
+                document.getElementById('edit-instagram').value = alumnus.instagramHandle || '';
+                document.getElementById('edit-social').value = alumnus.socialMedia.map(s => `${s.type}/${s.display}`).join(', ') || '';
+                document.getElementById('edit-website').value = alumnus.websites.map(w => `${w.type}/${w.url}`).join(', ') || '';
+                document.getElementById('edit-about').value = alumnus.about || '';
+                editMessage.textContent = '';
+                editMessage.className = 'edit-message';
+                editModal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            };
+
+            function closeEditModal() {
+                editModal.style.display = 'none';
+                document.body.style.overflow = '';
+                editingAlumnus = null;
+            }
+
+            document.getElementById('modal-close-btn').addEventListener('click', closeEditModal);
+            document.getElementById('modal-cancel-btn').addEventListener('click', closeEditModal);
+            editModal.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
+
+            editForm.addEventListener('submit', (e) => {
+                e.preventDefault();
+                if (!editingAlumnus || !currentUserEmail) return;
+
+                const saveBtn = document.getElementById('modal-save-btn');
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                editMessage.textContent = '';
+
+                const updates = {
+                    'city': document.getElementById('edit-city').value.trim(),
+                    'occupation': document.getElementById('edit-occupation').value.trim(),
+                    'phone': document.getElementById('edit-phone').value.trim(),
+                    'instagram': document.getElementById('edit-instagram').value.trim(),
+                    'social media': document.getElementById('edit-social').value.trim(),
+                    'website': document.getElementById('edit-website').value.trim(),
+                    'anything else': document.getElementById('edit-about').value.trim()
+                };
+
+                fetch(APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'update_profile',
+                        email: currentUserEmail,
+                        updates: updates
+                    })
+                })
+                .then(r => r.json())
+                .then(data => {
+                    if (data.success) {
+                        editMessage.textContent = '✓ Profile updated successfully!';
+                        editMessage.className = 'edit-message success';
+                        // Refresh local data with the server's response
+                        loadDataAndRender(data.csvOld, data.csvNew);
+                        // Update cached session
+                        sessionStorage.setItem('drb_session', JSON.stringify({
+                            csvOld: data.csvOld,
+                            csvNew: data.csvNew,
+                            email: currentUserEmail,
+                            timestamp: Date.now()
+                        }));
+                        setTimeout(() => {
+                            closeEditModal();
+                            router(); // Re-render the current profile
+                        }, 1200);
+                    } else {
+                        editMessage.textContent = data.error || 'Failed to update.';
+                        editMessage.className = 'edit-message error';
+                    }
+                })
+                .catch(err => {
+                    editMessage.textContent = 'Network error. Please try again.';
+                    editMessage.className = 'edit-message error';
+                })
+                .finally(() => {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save Changes';
+                });
             });
 
             let scrollTimeout;
