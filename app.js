@@ -544,8 +544,9 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             const allMemories = [];
             allAlumniData.forEach(a => {
-                if (a.photoUrl && a.photoUrl !== defaultProfilePic) allMemories.push({ url: a.photoUrl, id: generateFaceKey(a.photoUrl) });
-                if (a.drbPhotoUrl && a.drbPhotoUrl !== defaultProfilePic) allMemories.push({ url: a.drbPhotoUrl, id: generateFaceKey(a.drbPhotoUrl) });
+                if (a.drbPhotoUrl && a.drbPhotoUrl !== defaultProfilePic) {
+                    allMemories.push({ url: a.drbPhotoUrl, id: generateFaceKey(a.drbPhotoUrl) });
+                }
             });
 
             if (allMemories.length === 0) {
