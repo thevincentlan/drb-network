@@ -606,8 +606,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     return `
                     <a href="#profile=${a.id}" class="featured-card${hasSwap ? '' : ' no-swap'}">
                         <div class="featured-img-wrap">
-                            <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" onerror="this.src='${defaultProfilePic}'">
-                            ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" onerror="this.src='${defaultProfilePic}'">` : ''}
+                            <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
+                            ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" style="object-position: ${faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">` : ''}
                         </div>
                         <div class="featured-info">
                             <h3>${a.firstName} ${a.lastName}</h3>
@@ -641,7 +641,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
                 dashGrid.innerHTML = dashData.map(a => `
                     <a href="#profile=${a.id}" class="dash-card">
-                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
+                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
                         <div class="dash-card-info">
                             <strong>${a.firstName} ${a.lastName}</strong>
                             <span>Class of ${a.gradYear}</span>
@@ -685,8 +685,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             container.innerHTML = sorted.map(a => `
                 <a href="#profile=${a.id}" class="grid-card${a.drbPhotoUrl ? '' : ' no-swap'}">
                     <div class="grid-card-img">
-                        <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" onerror="this.src='${defaultProfilePic}'">
-                        ${a.drbPhotoUrl ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" onerror="this.src='${defaultProfilePic}'">` : ''}
+                        <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
+                        ${a.drbPhotoUrl ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" style="object-position: ${faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">` : ''}
                     </div>
                     <div class="grid-card-body">
                         <h3>${a.firstName} ${a.lastName}</h3>
