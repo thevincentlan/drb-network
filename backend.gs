@@ -220,7 +220,6 @@ function doPost(e) {
           }
         }
       }
-
       return createJsonResponse({ success: false, error: 'Could not find your profile to update.' });
     }
 

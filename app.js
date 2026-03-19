@@ -15,6 +15,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let mapMarkers = [];
         let currentSearchQuery = '';
         let currentUserEmail = '';
+        let faceCoords = {};
         let geocodeCache = {};
 
 
@@ -139,6 +140,9 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
                         const mainImageUrl = alumnus.photoUrl || defaultProfilePic;
                         const drbImageUrl = alumnus.drbPhotoUrl || mainImageUrl;
+                        
+                        const mainPos = faceCoords[mainImageUrl] ? `${faceCoords[mainImageUrl].x}% ${faceCoords[mainImageUrl].y}%` : 'top center';
+                        const drbPos = faceCoords[drbImageUrl] ? `${faceCoords[drbImageUrl].x}% ${faceCoords[drbImageUrl].y}%` : 'top center';
 
                         let summaryHtml = '';
                         if (alumnus.occupation) summaryHtml += `<p><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-2 .89-2 2v11c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zM10 4h4v2h-4V4zm10 15H4V8h16v11z"/></svg>${alumnus.occupation}</p>`;
@@ -209,7 +213,10 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         cardDiv.innerHTML = `
                             <div class="card-main">
                                 <div class="card-header">
-                                    <img loading="lazy" class="mobile-img" src="${mainImageUrl}" data-main-src="${mainImageUrl}" data-drb-src="${drbImageUrl}" alt="Profile photo" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                    <div class="profile-image-container">
+                                        <img src="${mainImageUrl}" alt="${alumnus.firstName} ${alumnus.lastName}" class="front-face" loading="lazy" style="object-position: ${mainPos}">
+                                        <img src="${drbImageUrl}" alt="${alumnus.firstName} ${alumnus.lastName} DRB" class="back-face" loading="lazy" style="object-position: ${drbPos}">
+                                    </div>
                                     <div class="name-info">
                                         <p class="name">${alumnus.firstName} ${alumnus.lastName}</p>
                                         <p class="year">Class of ${alumnus.gradYear}</p>
@@ -272,11 +279,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                                 if (!hasDrbPhoto) {
                                     cardDiv.classList.add('no-hover');
                                 }
+                                const mainPos = faceCoords[mainImageUrl] ? `${faceCoords[mainImageUrl].x}% ${faceCoords[mainImageUrl].y}%` : 'top center';
+                                const drbPos = faceCoords[drbImageUrl] ? `${faceCoords[drbImageUrl].x}% ${faceCoords[drbImageUrl].y}%` : 'top center';
 
                                 cardDiv.innerHTML = `
-                                    <div class="desktop-img-container">
-                                        <img loading="lazy" class="desktop-img front-face" src="${mainImageUrl}" alt="Profile photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
-                                        <img loading="lazy" class="desktop-img back-face" src="${drbImageUrl}" alt="DRB photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                    <div class="img-wrapper">
+                                        <div class="profile-image-container">
+                                             <img src="${mainImageUrl}" alt="${alumnus.firstName} ${alumnus.lastName}" class="front-face" loading="lazy" style="object-position: ${mainPos}">
+                                             <img src="${drbImageUrl}" alt="${alumnus.firstName} ${alumnus.lastName} DRB" class="back-face" loading="lazy" style="object-position: ${drbPos}">
+                                        </div>
                                     </div>
                                     <div class="info"><p class="name">${alumnus.firstName} ${alumnus.lastName}</p></div>`;
                                 cardsContainer.appendChild(cardDiv);
@@ -306,11 +317,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         if (!hasDrbPhoto) {
                             cardDiv.classList.add('no-hover');
                         }
+                        const mainPos = faceCoords[mainImageUrl] ? `${faceCoords[mainImageUrl].x}% ${faceCoords[mainImageUrl].y}%` : 'top center';
+                        const drbPos = faceCoords[drbImageUrl] ? `${faceCoords[drbImageUrl].x}% ${faceCoords[drbImageUrl].y}%` : 'top center';
 
                         cardDiv.innerHTML = `
-                            <div class="desktop-img-container">
-                                <img loading="lazy" class="desktop-img front-face" src="${mainImageUrl}" alt="Profile photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
-                                <img loading="lazy" class="desktop-img back-face" src="${drbImageUrl}" alt="DRB photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                            <div class="img-wrapper">
+                                <div class="profile-image-container">
+                                     <img src="${mainImageUrl}" alt="${alumnus.firstName} ${alumnus.lastName}" class="front-face" loading="lazy" style="object-position: ${mainPos}">
+                                     <img src="${drbImageUrl}" alt="${alumnus.firstName} ${alumnus.lastName} DRB" class="back-face" loading="lazy" style="object-position: ${drbPos}">
+                                </div>
                             </div>
                             <div class="info"><p class="name">${alumnus.firstName} ${alumnus.lastName}</p></div>`;
                         cardsContainer.appendChild(cardDiv);
@@ -340,8 +355,20 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             const imageContainer = profileView.querySelector('.profile-image-container');
             
-            imageContainer.querySelector('.front-face').src = alumnus.photoUrl || defaultProfilePic;
-            imageContainer.querySelector('.back-face').src = alumnus.drbPhotoUrl || defaultProfilePic;
+            profileView.querySelector('.name').textContent = `${alumnus.firstName} ${alumnus.lastName}`;
+            profileView.querySelector('.year').textContent = `Class of ${alumnus.gradYear}`;
+            profileView.querySelector('.city').textContent = alumnus.city ? `📍 ${alumnus.city}` : '';
+
+            const frontImg = imageContainer.querySelector('.front-face');
+            const backImg = imageContainer.querySelector('.back-face');
+            
+            frontImg.src = alumnus.photoUrl || defaultProfilePic;
+            backImg.src = alumnus.drbPhotoUrl || (alumnus.photoUrl || defaultProfilePic);
+            
+            frontImg.style.objectPosition = faceCoords[frontImg.src] ? `${faceCoords[frontImg.src].x}% ${faceCoords[frontImg.src].y}%` : 'top center';
+            backImg.style.objectPosition = faceCoords[backImg.src] ? `${faceCoords[backImg.src].x}% ${faceCoords[backImg.src].y}%` : 'top center';
+
+            // Show Edit Button logic
             imageContainer.classList.toggle('no-hover', !alumnus.drbPhotoUrl);
 
             profileView.querySelector('#profile-main .name').textContent = `${alumnus.firstName} ${alumnus.lastName}`;
@@ -397,17 +424,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 contactHtml += `<li>${socialIcons.website}<a href="${site.url}" target="_blank" rel="noopener noreferrer">${site.display} (${site.type})</a></li>`
             });
             contactHtml += '</ul>';
-            // Instagram preview card
-            if (alumnus.instagramUrl) {
-                contactHtml += `<a href="${alumnus.instagramUrl}" target="_blank" rel="noopener noreferrer" class="instagram-card">
-                    ${socialIcons.instagram}
-                    <div class="ig-info">
-                        <div class="ig-handle">${alumnus.instagramHandle}</div>
-                        <div class="ig-cta">View Profile on Instagram</div>
-                    </div>
-                    <span class="ig-arrow">→</span>
-                </a>`;
-            }
+
             if (contactHtml !== '<ul></ul>') contactContainer.innerHTML = contactHtml;
 
             detailsContainer.innerHTML += createDetailSection('Occupation / Industry', alumnus.occupation);
@@ -1582,6 +1599,13 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             window.openEditModal = function(alumnus) {
                 editingAlumnus = alumnus;
+                const isAdmin = currentUserEmail === 'admin@drb.network';
+                document.getElementById('admin-edit-fields').style.display = isAdmin ? 'block' : 'none';
+                document.getElementById('edit-firstname').value = alumnus.firstName || '';
+                document.getElementById('edit-lastname').value = alumnus.lastName || '';
+                document.getElementById('edit-classyear').value = alumnus.gradYear || '';
+                document.getElementById('edit-email').value = alumnus.email || '';
+
                 document.getElementById('edit-city').value = alumnus.city || '';
                 document.getElementById('edit-occupation').value = alumnus.occupation || '';
                 document.getElementById('edit-phone').value = alumnus.phone || '';
@@ -1624,7 +1648,18 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     'anything else': document.getElementById('edit-about').value.trim()
                 };
 
-                // If admin editing someone else's profile, use the alumnus's email
+                if (currentUserEmail === 'admin@drb.network') {
+                    const fn = document.getElementById('edit-firstname').value.trim();
+                    if (fn) updates['first name'] = fn;
+                    const ln = document.getElementById('edit-lastname').value.trim();
+                    if (ln) updates['last name'] = ln;
+                    const cy = document.getElementById('edit-classyear').value.trim();
+                    if (cy) updates['graduation year'] = cy;
+                    const em = document.getElementById('edit-email').value.trim();
+                    if (em) updates['email'] = em;
+                }
+
+                // If admin editing someone else's profile, use the UNIQUE search key (original email) to find the row
                 const emailToUpdate = (currentUserEmail === 'admin@drb.network' && editingAlumnus.email) ? editingAlumnus.email : currentUserEmail;
 
                 fetch(APPS_SCRIPT_URL, {
@@ -1744,4 +1779,106 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 sortByClassBtn.classList.remove('active');
                 renderCurrentView();
             });
+            
+            // Initialize Admin Face Scanner
+            setupFaceScanner();
         });
+
+        // ==========================================
+        // Admin Face Scanner Logic
+        // ==========================================
+        function setupFaceScanner() {
+            const btn = document.getElementById('admin-generate-faces-btn');
+            const status = document.getElementById('admin-face-status');
+            if (!btn || !status) return;
+
+            btn.addEventListener('click', async () => {
+                btn.disabled = true;
+                status.style.color = 'black';
+                status.textContent = 'Loading face-api.js (this takes a moment)...';
+                
+                try {
+                    // Inject script if not present
+                    if (typeof faceapi === 'undefined') {
+                        await new Promise((resolve, reject) => {
+                            const script = document.createElement('script');
+                            script.src = 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.min.js';
+                            script.onload = resolve;
+                            script.onerror = reject;
+                            document.head.appendChild(script);
+                        });
+                    }
+
+                    status.textContent = 'Loading AI models...';
+                    await faceapi.nets.tinyFaceDetector.loadFromUri('./models');
+
+                    const uniqueUrls = new Set();
+                    allAlumniData.forEach(a => {
+                        if (a.photoUrl) uniqueUrls.add(a.photoUrl);
+                        if (a.drbPhotoUrl) uniqueUrls.add(a.drbPhotoUrl);
+                    });
+                    
+                    // Filter out known bad urls orjotform defaults
+                    const urls = Array.from(uniqueUrls).filter(u => u && !u.includes('DRB%20Logo') && u.trim().length > 0);
+                    const newData = { ...faceCoords }; // preserve existing
+                    
+                    let count = 0, found = 0;
+                    for (const url of urls) {
+                        count++;
+                        status.textContent = `Scanning ${count} of ${urls.length}... (Found: ${found})`;
+                        
+                        // Skip if already computed
+                        if (newData[url]) {
+                            found++;
+                            continue;
+                        }
+
+                        try {
+                            const img = await new Promise((resolve, reject) => {
+                                const i = new Image();
+                                i.crossOrigin = 'anonymous'; // essential for canvas reading
+                                i.onload = () => resolve(i);
+                                i.onerror = reject;
+                                i.src = url;
+                            });
+
+                            const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions());
+                            if (detection) {
+                                const box = detection.box;
+                                const centerX = box.x + (box.width / 2);
+                                const centerY = box.y + (box.height / 2);
+                                const xPercent = Math.max(0, Math.min(100, Math.round((centerX / img.width) * 100)));
+                                const yPercent = Math.max(0, Math.min(100, Math.round((centerY / img.height) * 100)));
+                                newData[url] = { x: xPercent, y: yPercent };
+                                found++;
+                            } else {
+                                newData[url] = { x: 50, y: 20 }; // default top center
+                            }
+                        } catch (e) {
+                            console.warn("Could not scan image:", url);
+                            newData[url] = { x: 50, y: 20 };
+                        }
+                    }
+
+                    // Done scanning. Prompt download.
+                    status.textContent = `Done! Found ${found} faces. Providing download...`;
+                    status.style.color = 'green';
+                    
+                    const blob = new Blob([JSON.stringify(newData, null, 2)], { type: 'application/json' });
+                    const urlBlob = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = urlBlob;
+                    a.download = 'face_coords.json';
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(urlBlob);
+
+                } catch (e) {
+                    status.textContent = 'Error: ' + e.message;
+                    status.style.color = 'red';
+                } finally {
+                    btn.disabled = false;
+                }
+            });
+        }
