@@ -522,132 +522,107 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         // --- View Switching ---
         function switchView(view) {
             currentView = view;
-            const views = ['dashboard-view', 'grid-view', 'main-view', 'map-view', 'memories-view'];
+            const views = ['dashboard-view', 'map-view', 'memories-view'];
             views.forEach(id => {
                 const el = document.getElementById(id);
                 if (el) el.style.display = 'none';
             });
             document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
+            const btn = document.getElementById(`view-${view}-btn`);
+            if (btn) btn.classList.add('active');
+            
+            const viewEl = document.getElementById(`${view}-view`);
+            if (viewEl) viewEl.style.display = 'block';
+            
+            renderCurrentView();
+        }
 
-            if (view === 'dashboard') {
-                const el = document.getElementById('dashboard-view');
-                if (el) el.style.display = 'block';
-                document.getElementById('view-dashboard-btn').classList.add('active');
-                renderDashboard();
-            } else if (view === 'grid') {
-                const el = document.getElementById('grid-view');
-                if (el) el.style.display = 'block';
-                document.getElementById('view-grid-btn').classList.add('active');
-                renderGridView();
-            } else if (view === 'timeline') {
-                const el = document.getElementById('main-view');
-                if (el) el.style.display = 'block';
-                document.getElementById('view-timeline-btn').classList.add('active');
-                renderProfiles();
-            } else if (view === 'map') {
-                const el = document.getElementById('map-view');
-                if (el) el.style.display = 'block';
-                document.getElementById('view-map-btn').classList.add('active');
-                setTimeout(() => renderMapView(), 100);
-            } else if (view === 'memories') {
-                const el = document.getElementById('memories-view');
-                if (el) el.style.display = 'block';
-                document.getElementById('view-memories-btn').classList.add('active');
+        function renderCurrentView() {
+            const filteredAlumni = filterAlumni(allAlumniData);
+            
+            if (currentView === 'dashboard') {
+                renderDirectory(filteredAlumni);
+            } else if (currentView === 'map') {
+                renderMapView(filteredAlumni);
+            } else if (currentView === 'memories') {
                 renderMemories();
             }
         }
 
-        function renderCurrentView() {
-            if (currentView === 'dashboard') renderDashboard();
-            else if (currentView === 'grid') renderGridView();
-            else if (currentView === 'timeline') renderProfiles();
-            else if (currentView === 'map') renderMapView();
-        }
-
-        // --- Dashboard ---
-        function renderDashboard() {
-            if (allAlumniData.length === 0) return;
-
-            const featuredSection = document.getElementById('featured-section');
-            const statsGrid = document.getElementById('stats-grid');
-
-            // Hide featured and stats when searching
-            if (currentSearchQuery) {
-                if (featuredSection) featuredSection.style.display = 'none';
-                if (statsGrid) statsGrid.style.display = 'none';
-            } else {
-                if (featuredSection) featuredSection.style.display = '';
-                if (statsGrid) statsGrid.style.display = '';
-            }
-
-            // Animated stat counters
-            const cities = new Set(allAlumniData.map(a => a.city).filter(Boolean));
-            const industries = new Set(allAlumniData.map(a => a.occupation).filter(Boolean));
-            const classYears = new Set(allAlumniData.map(a => a.gradYear).filter(Boolean));
-
-            animateCounter('stat-total', allAlumniData.length);
+        // --- Unified Directory View (Formerly Dashboard/Grid) ---
+        function renderDirectory(filteredAlumni) {
+            const isFiltered = currentSearchQuery || filteredAlumni.length < allAlumniData.length;
+            
+            // 1. Interactive Stats
+            const cities = new Set(filteredAlumni.map(a => a.city).filter(Boolean));
+            const industries = new Set(filteredAlumni.map(a => a.occupation).filter(Boolean));
+            const classYears = new Set(filteredAlumni.map(a => a.gradYear).filter(Boolean));
+            animateCounter('stat-total', filteredAlumni.length);
             animateCounter('stat-cities', cities.size);
             animateCounter('stat-industries', industries.size);
             animateCounter('stat-classes', classYears.size);
 
-            // Featured carousel — pick 3 random alumni with photos
-            const withPhotos = allAlumniData.filter(a => a.photoUrl && a.photoUrl !== defaultProfilePic);
-            const featured = [];
-            const pool = [...withPhotos];
-            for (let i = 0; i < Math.min(3, pool.length); i++) {
-                const idx = Math.floor(Math.random() * pool.length);
-                featured.push(pool.splice(idx, 1)[0]);
-            }
-
-            const carousel = document.getElementById('featured-carousel');
-            if (carousel) {
-                carousel.innerHTML = featured.map(a => {
-                    const hasSwap = !!a.drbPhotoUrl;
-                    return `
-                    <a href="#profile=${a.id}" class="featured-card${hasSwap ? '' : ' no-swap'}">
-                        <div class="featured-img-wrap">
-                            <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
-                            ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" style="object-position: ${faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">` : ''}
-                        </div>
-                        <div class="featured-info">
-                            <h3>${a.firstName} ${a.lastName}</h3>
-                            <p>Class of ${a.gradYear}</p>
-                            ${a.occupation ? `<p class="featured-occ">${a.occupation}</p>` : ''}
-                            ${a.city ? `<p class="featured-city">📍 ${a.city}</p>` : ''}
-                        </div>
-                    </a>
-                `}).join('');
-            }
-
-            // Browse grid — show all alumni as small cards (respects search and sort)
-            const dashGrid = document.getElementById('dashboard-grid');
-            if (dashGrid) {
-                let dashData = [...allAlumniData];
-
-                // Apply search filter
-                if (currentSearchQuery) {
-                    dashData = dashData.filter(a => {
-                        const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
-                        return fullName.includes(currentSearchQuery);
-                    });
+            // 2. Featured Carousel (Hide if searching/filtering to save space)
+            const featuredSection = document.getElementById('featured-section');
+            if (isFiltered) {
+                featuredSection.style.display = 'none';
+            } else {
+                featuredSection.style.display = 'block';
+                const carousel = document.getElementById('featured-carousel');
+                if (carousel) {
+                    const withPhotos = filteredAlumni.filter(a => a.photoUrl && a.photoUrl !== defaultProfilePic);
+                    const featured = [];
+                    const pool = [...withPhotos];
+                    for (let i = 0; i < Math.min(3, pool.length); i++) {
+                        const idx = Math.floor(Math.random() * pool.length);
+                        featured.push(pool.splice(idx, 1)[0]);
+                    }
+                    carousel.innerHTML = featured.map(a => {
+                        const hasSwap = !!a.drbPhotoUrl;
+                        return `
+                        <a href="#profile=${a.id}" class="featured-card${hasSwap ? '' : ' no-swap'}">
+                            <div class="featured-img-wrap">
+                                <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
+                                ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" style="object-position: ${faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">` : ''}
+                            </div>
+                            <div class="featured-info">
+                                <h3>${a.firstName} ${a.lastName}</h3>
+                                <p>Class of ${a.gradYear}</p>
+                                ${a.occupation ? `<p class="featured-occ">${a.occupation}</p>` : ''}
+                                ${a.city ? `<p class="featured-city">📍 ${a.city}</p>` : ''}
+                            </div>
+                        </a>
+                    `}).join('');
                 }
+            }
 
-                // Apply sort
+            // 3. Grid View
+            const gridContainer = document.getElementById('dashboard-grid');
+            if (gridContainer) {
+                let dashData = [...filteredAlumni];
                 if (currentSort === 'alpha') {
                     dashData.sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
                 } else {
                     dashData.sort((a, b) => (a.gradYear || '').localeCompare(b.gradYear || '') || `${a.firstName}`.localeCompare(`${b.firstName}`));
                 }
 
-                dashGrid.innerHTML = dashData.map(a => `
-                    <a href="#profile=${a.id}" class="dash-card">
-                        <img src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
-                        <div class="dash-card-info">
-                            <strong>${a.firstName} ${a.lastName}</strong>
-                            <span>Class of ${a.gradYear}</span>
+                gridContainer.innerHTML = dashData.map(a => {
+                    const mainPos = faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center';
+                    const drbPos = faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center';
+                    return `
+                    <a href="#profile=${a.id}" class="grid-card${a.drbPhotoUrl ? '' : ' no-swap'}">
+                        <div class="grid-card-img">
+                            <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" style="object-position: ${mainPos}" onerror="this.src='${defaultProfilePic}'">
+                            ${a.drbPhotoUrl ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" style="object-position: ${drbPos}" onerror="this.src='${defaultProfilePic}'">` : ''}
+                        </div>
+                        <div class="grid-card-body">
+                            <h3>${a.firstName} ${a.lastName}</h3>
+                            <p class="grid-year">Class of ${a.gradYear}</p>
+                            ${a.city ? `<p class="grid-city">📍 ${a.city}</p>` : ''}
+                            ${a.occupation ? `<p class="grid-occ">${a.occupation}</p>` : ''}
                         </div>
                     </a>
-                `).join('');
+                `}).join('');
             }
         }
 
@@ -667,36 +642,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             requestAnimationFrame(tick);
         }
 
-        // --- Grid View ---
-        function renderGridView() {
-            const container = document.getElementById('grid-container');
-            if (!container) return;
-            let filtered = allAlumniData;
-            if (currentSearchQuery) {
-                filtered = filtered.filter(a => {
-                    const name = `${a.firstName} ${a.lastName}`.toLowerCase();
-                    return name.includes(currentSearchQuery);
-                });
-            }
-            const sorted = currentSort === 'alpha'
-                ? [...filtered].sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`))
-                : [...filtered].sort((a, b) => (a.gradYear || '').localeCompare(b.gradYear || '') || `${a.firstName}`.localeCompare(`${b.firstName}`));
 
-            container.innerHTML = sorted.map(a => `
-                <a href="#profile=${a.id}" class="grid-card${a.drbPhotoUrl ? '' : ' no-swap'}">
-                    <div class="grid-card-img">
-                        <img class="front-face" src="${a.photoUrl || defaultProfilePic}" alt="${a.firstName}" loading="lazy" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)] ? `${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].x}% ${faceCoords[generateFaceKey(a.photoUrl || defaultProfilePic)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">
-                        ${a.drbPhotoUrl ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" style="object-position: ${faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center'}" onerror="this.src='${defaultProfilePic}'">` : ''}
-                    </div>
-                    <div class="grid-card-body">
-                        <h3>${a.firstName} ${a.lastName}</h3>
-                        <p class="grid-year">Class of ${a.gradYear}</p>
-                        ${a.city ? `<p class="grid-city">📍 ${a.city}</p>` : ''}
-                        ${a.occupation ? `<p class="grid-occ">${a.occupation}</p>` : ''}
-                    </div>
-                </a>
-            `).join('');
-        }
 
         // --- Map View ---
         const CITY_COORDS = {
@@ -842,7 +788,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             return null;
         }
 
-        async function renderMapView() {
+        async function renderMapView(filteredAlumni) {
             const container = document.getElementById('map-container');
             if (!container) return;
             if (!leafletMap) {
@@ -862,7 +808,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             // Group alumni by city
             const cityGroups = {};
-            allAlumniData.forEach(a => {
+            filteredAlumni.forEach(a => {
                 if (!a.city) return;
                 const cityKey = a.city.toLowerCase().replace(/,\s*(\w{2})$/i, '').replace(/,.*$/, '').trim();
                 if (!cityGroups[cityKey]) cityGroups[cityKey] = { name: a.city, alumni: [] };
@@ -1038,7 +984,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const logoutBtn = document.getElementById('logout-btn');
             const searchInput = document.getElementById('search-input');
 
+    function renderProfiles() {
+        const searchInput = document.getElementById('search-input');
+        currentSearchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        const filteredAlumni = filterAlumni(allAlumniData);
 
+        renderDirectory(filteredAlumni);
+        renderMapView(filteredAlumni);
+        renderMemories();
+    }
 
             function loadDataAndRender(csvOldText, csvNewText) {
                     loadingMessage.style.display = 'none';
