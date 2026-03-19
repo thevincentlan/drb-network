@@ -456,8 +456,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const container = document.querySelector('.memories-gallery');
             if (!container) return;
 
-            // Collect all DRB photos from alumni
-            const memories = allAlumniData
+            // Collect only DRB photos from alumni
+            const allMemories = allAlumniData
                 .filter(a => a.drbPhotoUrl && a.drbPhotoUrl !== defaultProfilePic)
                 .map(a => ({
                     url: a.drbPhotoUrl,
@@ -465,18 +465,6 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     year: a.gradYear,
                     id: a.id
                 }));
-
-            // Also include profile photos as secondary memories
-            const profilePhotos = allAlumniData
-                .filter(a => a.photoUrl && a.photoUrl !== defaultProfilePic && (!a.drbPhotoUrl || a.drbPhotoUrl === defaultProfilePic))
-                .map(a => ({
-                    url: a.photoUrl,
-                    name: `${a.firstName} ${a.lastName}`,
-                    year: a.gradYear,
-                    id: a.id
-                }));
-
-            const allMemories = [...memories, ...profilePhotos];
 
             if (allMemories.length === 0) {
                 container.innerHTML = '<p class="memories-empty">No photos uploaded yet. Be the first to share a memory!</p>';
