@@ -13,6 +13,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let currentView = 'dashboard'; // 'dashboard', 'grid', 'timeline', 'map'
         let leafletMap = null;
         let mapMarkers = [];
+        let currentSearchQuery = '';
         let geocodeCache = {};
 
 
@@ -645,7 +646,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const container = document.getElementById('grid-container');
             if (!container) return;
             let filtered = allAlumniData;
-            if (typeof currentSearchQuery !== 'undefined' && currentSearchQuery) {
+            if (currentSearchQuery) {
                 filtered = filtered.filter(a => {
                     const name = `${a.firstName} ${a.lastName}`.toLowerCase();
                     return name.includes(currentSearchQuery);
@@ -1010,7 +1011,6 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const loadingMessage = document.getElementById('loading-message');
             const logoutBtn = document.getElementById('logout-btn');
             const searchInput = document.getElementById('search-input');
-            let currentSearchQuery = '';
 
 
 
