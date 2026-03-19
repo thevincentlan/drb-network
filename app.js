@@ -1,4 +1,4 @@
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzI73oecr1Iw4Ggr9jEmndkflWsN9CqSlSbk2eLh5v_org0U_wkyQbGXNkAT9ObRc6adQ/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6Z1U1TvLsY08rj0-Q_Er6eFCcjaMwjjeMFQpf58ZKE-uL718KSJEicKeaX6kD4Wc6/exec';
 
 // --- This URL points to your Google Sheet ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTHcndXfYMgUm1eRG0IvoReaBxYowGhiay23WbY9JegVZkTlV1TI6_xFZY-GJq8UZEEMOdACI-2nOIb/pub?gid=370192004&single=true&output=csv';
@@ -787,9 +787,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzI73oecr1Iw4Gg
                 loginMessage.classList.remove('error');
                 loginBtn.disabled = true;
 
-                fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'request_otp', email: rawInput })
+                fetch(`${APPS_SCRIPT_URL}?action=request_otp&email=${encodeURIComponent(rawInput)}`, {
+                    method: 'GET'
                 })
                 .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok'))
                 .then(data => {
@@ -826,9 +825,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzI73oecr1Iw4Gg
                 otpMessage.classList.remove('error');
                 verifyBtn.disabled = true;
 
-                fetch(APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    body: JSON.stringify({ action: 'verify_otp', email: currentUserEmail, code: codeInput })
+                fetch(`${APPS_SCRIPT_URL}?action=verify_otp&email=${encodeURIComponent(currentUserEmail)}&code=${encodeURIComponent(codeInput)}`, {
+                    method: 'GET'
                 })
                 .then(response => response.ok ? response.json() : Promise.reject('Network response was not ok'))
                 .then(data => {
