@@ -40,7 +40,13 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
         const profilesContainer = document.getElementById('profiles-container');
 
 
-        function renderProfiles() {
+        let renderTimeout;
+        const renderProfiles = () => {
+            if (renderTimeout) cancelAnimationFrame(renderTimeout);
+            renderTimeout = requestAnimationFrame(renderProfilesImpl);
+        };
+
+        function renderProfilesImpl() {
             profilesContainer.innerHTML = ''; 
 
             const activeFilters = {
@@ -177,7 +183,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                         cardDiv.innerHTML = `
                             <div class="card-main">
                                 <div class="card-header">
-                                    <img class="mobile-img" src="${mainImageUrl}" data-main-src="${mainImageUrl}" data-drb-src="${drbImageUrl}" alt="Profile photo" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                    <img loading="lazy" class="mobile-img" src="${mainImageUrl}" data-main-src="${mainImageUrl}" data-drb-src="${drbImageUrl}" alt="Profile photo" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
                                     <div class="name-info">
                                         <p class="name">${alumnus.firstName} ${alumnus.lastName}</p>
                                         <p class="year">Class of ${alumnus.gradYear}</p>
@@ -243,8 +249,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
 
                                 cardDiv.innerHTML = `
                                     <div class="desktop-img-container">
-                                        <img class="desktop-img front-face" src="${mainImageUrl}" alt="Profile photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
-                                        <img class="desktop-img back-face" src="${drbImageUrl}" alt="DRB photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                        <img loading="lazy" class="desktop-img front-face" src="${mainImageUrl}" alt="Profile photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                        <img loading="lazy" class="desktop-img back-face" src="${drbImageUrl}" alt="DRB photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
                                     </div>
                                     <div class="info"><p class="name">${alumnus.firstName} ${alumnus.lastName}</p></div>`;
                                 cardsContainer.appendChild(cardDiv);
@@ -277,8 +283,8 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
 
                         cardDiv.innerHTML = `
                             <div class="desktop-img-container">
-                                <img class="desktop-img front-face" src="${mainImageUrl}" alt="Profile photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
-                                <img class="desktop-img back-face" src="${drbImageUrl}" alt="DRB photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                <img loading="lazy" class="desktop-img front-face" src="${mainImageUrl}" alt="Profile photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
+                                <img loading="lazy" class="desktop-img back-face" src="${drbImageUrl}" alt="DRB photo of ${alumnus.firstName} ${alumnus.lastName}" onerror="this.onerror=null;this.src='${defaultProfilePic}';">
                             </div>
                             <div class="info"><p class="name">${alumnus.firstName} ${alumnus.lastName}</p></div>`;
                         cardsContainer.appendChild(cardDiv);
