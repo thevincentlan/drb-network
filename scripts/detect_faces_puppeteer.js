@@ -108,7 +108,7 @@ async function run() {
 
     // Inject the runner logic into the page
     const results = await page.evaluate(async (jobs) => {
-        await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
+        await faceapi.nets.ssdMobilenetv1.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
         
         const data = {};
         for(let i=0; i<jobs.length; i++){
@@ -122,7 +122,7 @@ async function run() {
                     imgEl.src = url;
                 });
                 
-                const detection = await faceapi.detectSingleFace(img, new faceapi.TinyFaceDetectorOptions());
+                const detection = await faceapi.detectSingleFace(img, new faceapi.SsdMobilenetv1Options());
                 if (detection) {
                     const box = detection.box;
                     const centerX = box.x + (box.width / 2);

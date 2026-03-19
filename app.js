@@ -12,6 +12,9 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let currentSort = 'class'; // 'class' or 'alpha'
         let currentView = 'dashboard'; // 'dashboard', 'grid', 'timeline', 'map'
         let leafletMap = null;
+        let mapMarkers = [];
+        let currentSearchQuery = '';
+        let currentUserEmail = '';
         let faceCoords = {};
         let geocodeCache = {};
 
