@@ -56,7 +56,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             }).join(' ');
         }
         
-        const mainView = document.getElementById('main-view');
+        const mainView = document.getElementById('dashboard-view');
         const profileView = document.getElementById('profile-view');
         const profilesContainer = document.getElementById('profiles-container');
 
@@ -67,9 +67,64 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             renderTimeout = requestAnimationFrame(renderProfilesImpl);
         };
 
+        function filterAlumni(data) {
+            // Apply name search filter
+            let searchFiltered = data;
+            if (currentSearchQuery) {
+                searchFiltered = data.filter(alum => {
+                    const fullName = `${alum.firstName} ${alum.lastName}`.toLowerCase();
+                    const reversed = `${alum.lastName} ${alum.firstName}`.toLowerCase();
+                    return fullName.includes(currentSearchQuery) || reversed.includes(currentSearchQuery);
+                });
+            }
+
+            // Check if filter checkboxes exist yet (they may not be created during initial load)
+            const classYearMaster = document.getElementById('class-year-master-filter');
+            if (!classYearMaster) return searchFiltered;
+
+            const activeFilters = {
+                classYears: { active: classYearMaster.checked, values: new Set(Array.from(document.querySelectorAll('#class-year-options-container input:checked')).map(cb => cb.value)) },
+                honorees: { active: document.getElementById('honorees-master-filter').checked, awards: new Set(Array.from(document.querySelectorAll('#drb-awards-options-container input:checked')).map(cb => cb.value)), leadership: new Set(Array.from(document.querySelectorAll('#drb-leadership-options-container input:checked')).map(cb => cb.value))},
+                education: { active: document.getElementById('education-master-filter').checked, universities: new Set(Array.from(document.querySelectorAll('#university-options-container .university-sub-checkbox:checked')).map(cb => cb.value)), majors: new Set(Array.from(document.querySelectorAll('#major-options-container .major-sub-checkbox:checked')).map(cb => cb.value)), degrees: new Set(Array.from(document.querySelectorAll('#degree-options-container input:checked')).map(cb => cb.value)), greek: new Set(Array.from(document.querySelectorAll('#greek-options-container input:checked')).map(cb => cb.value)) },
+                career: { active: document.getElementById('career-master-filter').checked, industries: new Set(Array.from(document.querySelectorAll('#industry-options-container .industry-sub-checkbox:checked')).map(cb => cb.value)), military: new Set(Array.from(document.querySelectorAll('#military-options-container input:checked')).map(cb => cb.value)) },
+                location: { active: document.getElementById('location-master-filter').checked, values: new Set(Array.from(document.querySelectorAll('#location-options-container input:checked')).map(cb => cb.value)) }
+            };
+
+            return searchFiltered.filter(alum => {
+                if (activeFilters.classYears.active && activeFilters.classYears.values.size > 0) {
+                    if (!activeFilters.classYears.values.has(alum.gradYear)) return false;
+                }
+                if(activeFilters.honorees.active){
+                    const awardsMatch = activeFilters.honorees.awards.size === 0 || alum.awards.some(award => activeFilters.honorees.awards.has(award));
+                    const leadershipMatch = activeFilters.honorees.leadership.size === 0 || alum.leadershipPositions.some(pos => activeFilters.honorees.leadership.has(pos));
+                    if (!(awardsMatch && leadershipMatch)) return false;
+                    if(activeFilters.honorees.awards.size === 0 && activeFilters.honorees.leadership.size === 0) { if (alum.awards.length === 0 && alum.leadershipPositions.length === 0) return false; }
+                }
+                if (activeFilters.education.active) {
+                    const uniMatch = activeFilters.education.universities.size === 0 || alum.universities.some(u => activeFilters.education.universities.has(u));
+                    const majorMatch = activeFilters.education.majors.size === 0 || alum.majors.some(m => activeFilters.education.majors.has(m));
+                    const degreeMatch = activeFilters.education.degrees.size === 0 || alum.educationHistory.some(edu => edu.degreeLevels.some(level => activeFilters.education.degrees.has(level)));
+                    const greekMatch = activeFilters.education.greek.size === 0 || activeFilters.education.greek.has(alum.greekAffiliation);
+                    if (!(uniMatch && majorMatch && degreeMatch && greekMatch)) return false;
+                    if (activeFilters.education.universities.size === 0 && activeFilters.education.majors.size === 0 && activeFilters.education.degrees.size === 0 && activeFilters.education.greek.size === 0) { if (!alum.hasEducation && !alum.greekAffiliation) return false; }
+                }
+                if(activeFilters.career.active){
+                    const industryMatch = activeFilters.career.industries.size === 0 || activeFilters.career.industries.has(alum.industry);
+                    const militaryMatch = activeFilters.career.military.size === 0 || activeFilters.career.military.has(alum.militaryBranch);
+                    if(!(industryMatch && militaryMatch)) return false;
+                    if(activeFilters.career.industries.size === 0 && activeFilters.career.military.size === 0) { if(!alum.industry && !alum.hasMilitaryService) return false;}
+                }
+                if (activeFilters.location.active) {
+                    if (activeFilters.location.values.size > 0) { if (!activeFilters.location.values.has(alum.state)) return false; } 
+                    else { if (!alum.state) return false; }
+                }
+                return true;
+            });
+        }
+
         function renderProfilesImpl() {
-          try {
-            profilesContainer.innerHTML = '';
+         try {
+            if (profilesContainer) profilesContainer.innerHTML = '';
 
             const activeFilters = {
                 classYears: { active: document.getElementById('class-year-master-filter').checked, values: new Set(Array.from(document.querySelectorAll('#class-year-options-container input:checked')).map(cb => cb.value)) },
@@ -124,7 +179,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             });
 
             if (filteredAlumni.length === 0) {
-                 profilesContainer.innerHTML = '<p id="no-results-message">No profiles match the current filters.</p>';
+                 if (profilesContainer) profilesContainer.innerHTML = '<p id="no-results-message">No profiles match the current filters.</p>';
                  return;
             }
 
@@ -1315,7 +1370,9 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         e.preventDefault(); if (Date.now() - lastNavigationTime < 500) return; showMainView();
                     });
 
-                    profilesContainer.addEventListener('click', (e) => {
+                    // --- Profiles Container Click Handler ---
+            if (profilesContainer) {
+                profilesContainer.addEventListener('click', (e) => {
                         const toggleBtn = e.target.closest('.details-toggle');
                         if (toggleBtn) {
                             const card = toggleBtn.closest('.mobile-card');
@@ -1342,6 +1399,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         if (card && card.dataset.id) { e.preventDefault(); lastNavigationTime = Date.now(); window.location.hash = `#profile=${card.dataset.id}`; }
                     });
                 }
+            }
             
             // --- Session Restore ---
             const cachedSession = sessionStorage.getItem('drb_session');
@@ -1517,9 +1575,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             // --- View Toggles ---
             document.getElementById('view-dashboard-btn').addEventListener('click', () => switchView('dashboard'));
-            document.getElementById('view-grid-btn').addEventListener('click', () => switchView('grid'));
-            document.getElementById('view-timeline-btn').addEventListener('click', () => switchView('timeline'));
-            document.getElementById('view-map-btn').addEventListener('click', () => switchView('map'));
+            const viewMapBtn = document.getElementById('view-map-btn');
+            if (viewMapBtn) viewMapBtn.addEventListener('click', () => switchView('map'));
             const viewMemoriesBtn = document.getElementById('view-memories-btn');
             if (viewMemoriesBtn) viewMemoriesBtn.addEventListener('click', () => switchView('memories'));
 
@@ -1530,7 +1587,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     document.body.classList.remove('logged-in');
                     document.body.classList.remove('filters-visible');
                     allAlumniData = [];
-                    profilesContainer.innerHTML = '';
+                    if (profilesContainer) profilesContainer.innerHTML = '';
                     document.getElementById('email-step').style.display = 'block';
                     document.getElementById('otp-step').style.display = 'none';
                     document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure 6-digit access code.';
