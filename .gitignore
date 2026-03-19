@@ -1,0 +1,4 @@
+google_script/node_modules/
+google_script/debug_*.json
+google_script/dump.json
+google_script/output.txt

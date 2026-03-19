@@ -914,7 +914,7 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
                 .then(data => {
                     if (data.success) {
                         document.body.classList.add('logged-in');
-                        loadDataAndRender(data.csv);
+                        loadDataAndRender(data.csvOld, data.csvNew);
                         router(); // Initial render after login
                     } else {
                         otpMessage.textContent = data.error || 'Invalid code.';
