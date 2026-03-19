@@ -500,208 +500,284 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6R
 
 
 
-            function loadDataAndRender(csvText) {
+            function loadDataAndRender(csvOldText, csvNewText) {
                     loadingMessage.style.display = 'none';
-                const data = Papa.parse(csvText, { skipEmptyLines: true }).data;
-                    if (data.length < 1) return;
-
-                    const headers = data[0].map(h => h.trim().replace(/^"|"$/g, ''));
-                    
-                    const headerIndices = {
-                        firstName: headers.indexOf('Name - First Name'), lastName: headers.indexOf('Name - Last Name'), gradYear: headers.indexOf('ERHS Graduation Year'),
-                        photoUrl: headers.indexOf('Upload a photo for your profile (current photo)'), drbPhotoUrl: headers.indexOf('Upload a photo of you on DRB'),
-                        greek: headers.indexOf('Greek Affiliation'), military: headers.indexOf('Military'), leadership: headers.indexOf('Leadership Positions Held'),
-                        education: headers.indexOf('Education (can add multiple)'), tenure: headers.indexOf('Tenure on DRB (Years)'), awards: headers.indexOf('DRB Awards'),
-                        favoriteStep: headers.indexOf('Favorite Step'), city: headers.indexOf('Which city do you live in now?'), occupation: headers.indexOf('What\'s your occupation or what industry are you in?'),
-                        rank: headers.indexOf('Military Rank'), about: headers.indexOf('Anything else you want to add about yourself (accolades, shameless plugs, advice, etc)'),
-                        email: headers.indexOf('Email'), phone: headers.indexOf('Phone Number'), instagram: headers.indexOf('Instagram (join our group chat if you’re not already in)'),
-                        consent: headers.indexOf('I am okay with having my contact shared so other DRB alumni can contact me (networking, mentoring, etc.)'),
-                        socialMedia: headers.indexOf('Social Media'), websites: headers.indexOf('Websites')
-                    };
-
-                    if (headerIndices.firstName === -1 || headerIndices.lastName === -1 || headerIndices.gradYear === -1) {
-                         loadingMessage.textContent = 'Error: Core columns are missing. Check sheet for Name and Graduation Year.';
-                         loadingMessage.style.display = 'block'; console.error("Missing columns. Found headers:", headers); return;
-                    }
+                    allAlumniData = [];
 
                     const sets = { classYears: new Set(), greek: new Set(), military: new Set(), leadership: new Set(), awards: new Set(), universities: {}, majors: new Set(), degreeLevels: new Set(), locations: new Set(), industries: {} };
 
-                    for (let i = 1; i < data.length; i++) {
-                        const cells = data[i];
-                        if (cells.length < headers.length) continue; 
-                        
-                        const getCell = (key) => (headerIndices[key] !== -1 && cells[headerIndices[key]]) ? cells[headerIndices[key]].trim() : null;
+                    function processSheet(csvText, isNewSheet) {
+                        if (!csvText) return;
+                        const data = Papa.parse(csvText, { skipEmptyLines: true }).data;
+                        if (data.length < 2) return;
+                        const headers = data[0].map(h => h.trim().replace(/^"|"$/g, ''));
 
-                        const firstName = getCell('firstName'); const lastName = getCell('lastName'); const gradYear = getCell('gradYear');
-                        if (!firstName || !lastName || !gradYear) continue;
-                        sets.classYears.add(gradYear);
-                        
-                        const hasData = (value) => value && value.toLowerCase() !== 'n/a' && value !== '';
-                        
-                        const emailForLogin = getCell('email');
-                        if (hasData(emailForLogin)) {
-                            allowedEmails.add(emailForLogin.trim().toLowerCase());
+                        let headerIndices;
+                        if (isNewSheet) {
+                            headerIndices = {
+                                firstName: headers.indexOf('First Name'), lastName: headers.indexOf('Last Name'), gradYear: headers.indexOf('ERHS Graduation Year'),
+                                photoUrl: headers.indexOf('Upload a photo for your profile (current photo)'), drbPhotoUrl: headers.indexOf('Upload a photo of you on DRB'),
+                                greek: headers.indexOf('Greek Affiliation'), military: headers.indexOf('Military Branch'), leadership: headers.indexOf('Leadership Positions Held'),
+                                tenure: headers.indexOf('Tenure on DRB (Years)'), awards: headers.indexOf('DRB Awards'),
+                                favoriteStep: headers.indexOf('Favorite Step'), city: headers.indexOf('Which city do you live in now?'), occupation: headers.indexOf('What\'s your occupation or what industry are you in?'),
+                                rank: headers.indexOf('Military Rank'), about: headers.indexOf('Anything else you want to add about yourself (accolades, shameless plugs, advice, etc)'),
+                                email: headers.indexOf('Email (required to access the database)'), phone: headers.indexOf('Phone Number'), instagram: headers.indexOf('Instagram (join our group chat if you\'re not already in)'),
+                                consent: headers.indexOf('Contact Sharing Preferences with Other Alumni'),
+                                
+                                newEduUni: headers.indexOf('Education - University (list each on a new line if multiple)'),
+                                newEduMajor: headers.indexOf('Education - Major(s) (list each on a new line if multiple)'),
+                                newEduDegree: headers.indexOf('Education - Degree (list each on a new line if multiple)'),
+                                newEduGradYear: headers.indexOf('Education - Graduation Year (list each on a new line if multiple)'),
+                                
+                                newSocialType: headers.indexOf('Social Media - Type (LinkedIn, YouTube, etc)'),
+                                newSocialUrl: headers.indexOf('Social Media - Handle/URL'),
+                                newWebsiteType: headers.indexOf('Website - Type (Organization, Portfolio, etc)'),
+                                newWebsiteUrl: headers.indexOf('Website URL')
+                            };
+                        } else {
+                            headerIndices = {
+                                firstName: headers.indexOf('Name - First Name'), lastName: headers.indexOf('Name - Last Name'), gradYear: headers.indexOf('ERHS Graduation Year'),
+                                photoUrl: headers.indexOf('Upload a photo for your profile (current photo)'), drbPhotoUrl: headers.indexOf('Upload a photo of you on DRB'),
+                                greek: headers.indexOf('Greek Affiliation'), military: headers.indexOf('Military'), leadership: headers.indexOf('Leadership Positions Held'),
+                                education: headers.indexOf('Education (can add multiple)'), tenure: headers.indexOf('Tenure on DRB (Years)'), awards: headers.indexOf('DRB Awards'),
+                                favoriteStep: headers.indexOf('Favorite Step'), city: headers.indexOf('Which city do you live in now?'), occupation: headers.indexOf('What\'s your occupation or what industry are you in?'),
+                                rank: headers.indexOf('Military Rank'), about: headers.indexOf('Anything else you want to add about yourself (accolades, shameless plugs, advice, etc)'),
+                                email: headers.indexOf('Email'), phone: headers.indexOf('Phone Number'), instagram: headers.indexOf('Instagram (join our group chat if you’re not already in)'),
+                                consent: headers.indexOf('I am okay with having my contact shared so other DRB alumni can contact me (networking, mentoring, etc.)'),
+                                socialMedia: headers.indexOf('Social Media'), websites: headers.indexOf('Websites')
+                            };
                         }
 
-                        const cityRaw = getCell('city');
-                        let state = null;
-                        if (hasData(cityRaw)) {
-                            const parts = cityRaw.split(/,?\s+/);
-                            let foundLocation = null;
+                        for (let i = 1; i < data.length; i++) {
+                            const cells = data[i];
+                            if (cells.length < headers.length) continue; 
+                            const getCell = (key) => (headerIndices[key] !== undefined && headerIndices[key] !== -1 && cells[headerIndices[key]]) ? cells[headerIndices[key]].trim() : null;
 
-                            // Reverse loop to check for multi-word locations first (e.g., 'South Korea')
-                            for (let j = parts.length; j > 0; j--) {
-                                const potentialLoc = parts.slice(j - 1, j).join(' ');
-                                const upperLoc = potentialLoc.toUpperCase();
-                                
-                                if (countryCodeMap[upperLoc]) { foundLocation = countryCodeMap[upperLoc]; break; }
-                                if (stateAbbreviationMap[upperLoc]) { foundLocation = stateAbbreviationMap[upperLoc]; break; }
-                                if (Object.values(stateAbbreviationMap).map(s => s.toUpperCase()).includes(upperLoc)) { foundLocation = Object.values(stateAbbreviationMap).find(s => s.toUpperCase() === upperLoc); break; }
+                            const firstName = getCell('firstName'); const lastName = getCell('lastName'); const gradYear = getCell('gradYear');
+                            if (!firstName || !lastName || !gradYear) continue;
+                            sets.classYears.add(gradYear);
+                            
+                            const hasData = (value) => value && value.toLowerCase() !== 'n/a' && value !== '';
+                            const emailForLogin = getCell('email');
+                            if (hasData(emailForLogin)) allowedEmails.add(emailForLogin.trim().toLowerCase());
+
+                            const cityRaw = getCell('city');
+                            let state = null;
+                            if (hasData(cityRaw)) {
+                                const parts = cityRaw.split(/,?\s+/);
+                                let foundLocation = null;
+                                for (let j = parts.length; j > 0; j--) {
+                                    const potentialLoc = parts.slice(j - 1, j).join(' ');
+                                    const upperLoc = potentialLoc.toUpperCase();
+                                    if (countryCodeMap[upperLoc]) { foundLocation = countryCodeMap[upperLoc]; break; }
+                                    if (stateAbbreviationMap[upperLoc]) { foundLocation = stateAbbreviationMap[upperLoc]; break; }
+                                    if (Object.values(stateAbbreviationMap).map(s => s.toUpperCase()).includes(upperLoc)) { foundLocation = Object.values(stateAbbreviationMap).find(s => s.toUpperCase() === upperLoc); break; }
+                                }
+                                state = foundLocation || parts[parts.length - 1].trim();
+                                if(state) sets.locations.add(state);
+                            }
+
+                            let currentEducationHistory = [];
+                            if (isNewSheet) {
+                                const uniRaw = getCell('newEduUni');
+                                const majorRaw = getCell('newEduMajor');
+                                const degreeRaw = getCell('newEduDegree');
+                                const gradRaw = getCell('newEduGradYear');
+
+                                if (hasData(uniRaw)) {
+                                    const unis = uniRaw.split('\n').filter(Boolean);
+                                    const majorsArr = hasData(majorRaw) ? majorRaw.split('\n') : [];
+                                    const degreesArr = hasData(degreeRaw) ? degreeRaw.split('\n') : [];
+                                    const gradsArr = hasData(gradRaw) ? gradRaw.split('\n') : [];
+
+                                    unis.forEach((uniStr, idx) => {
+                                        const normalizedUni = normalizeName(uniStr.trim(), universityNormalizationMap);
+                                        const majorStr = majorsArr[idx] || '';
+                                        const degreeStr = degreesArr[idx] || '';
+                                        const gradYrStr = gradsArr[idx] || '';
+
+                                        const majors = majorStr ? majorStr.split(/[\/,]+/).map(m => ({ original: m.trim(), normalized: normalizeName(m, majorNormalizationMap) })).filter(m => m.normalized) : [];
+                                        const degrees = degreeStr ? degreeStr.split(/[\/,]+/).map(d => normalizeName(d, degreeNormalizationMap)).filter(Boolean) : [];
+                                        const degreeLevels = new Set();
+                                        degrees.forEach(degree => {
+                                            const lowerDegree = degree.toLowerCase();
+                                            if (lowerDegree.includes('bachelor')) degreeLevels.add('Bachelor');
+                                            else if (lowerDegree.includes('master')) degreeLevels.add('Master');
+                                            else if (lowerDegree.includes('doctor')) degreeLevels.add('Doctorate');
+                                            else if (lowerDegree.includes('associate')) degreeLevels.add('Associate');
+                                        });
+
+                                        if (degreeLevels.size > 0) degreeLevels.forEach(level => sets.degreeLevels.add(level));
+
+                                        if (normalizedUni) {
+                                            let uniState = universityToStateMap[normalizedUni] || 'Other';
+                                            sets.universities[normalizedUni] = uniState;
+                                            majors.forEach(m => sets.majors.add(m.normalized));
+                                            currentEducationHistory.push({ university: escapeHTML(normalizedUni), majors: majors, degrees: degrees, gradYear: gradYrStr.trim(), degreeLevels: [...degreeLevels] });
+                                        }
+                                    });
+                                }
+                            } else {
+                                const educationRaw = getCell('education');
+                                if (hasData(educationRaw)) {
+                                    educationRaw.split('\n').forEach(entry => {
+                                        const uniMatch = entry.match(/University:\s*([^,]+)/);
+                                        const majorMatch = entry.match(/Major\(s\):\s*(.+?)(?=,\s*Degree:|$)/);
+                                        const degreeMatch = entry.match(/Degree:\s*(.+?)(?=,\s*Graduation Year:|$)/);
+                                        const gradYearMatch = entry.match(/Graduation Year:\s*(\d{4})/);
+                                        
+                                        const normalizedUni = uniMatch && uniMatch[1] ? normalizeName(uniMatch[1], universityNormalizationMap) : null;
+                                        const majors = majorMatch && majorMatch[1] ? majorMatch[1].split(/[\/,]+/).map(m => ({
+                                            original: m.trim(),
+                                            normalized: normalizeName(m, majorNormalizationMap)
+                                        })).filter(m => m.normalized) : [];
+                                        
+                                        const degrees = degreeMatch && degreeMatch[1] ? degreeMatch[1].split(/[\/,]+/).map(d => normalizeName(d, degreeNormalizationMap)).filter(Boolean) : [];
+                                        const educationGradYear = gradYearMatch && gradYearMatch[1] ? gradYearMatch[1] : null;
+
+                                        const degreeLevels = new Set();
+                                        degrees.forEach(degree => {
+                                            if(degree){
+                                                const lowerDegree = degree.toLowerCase();
+                                                if (lowerDegree.includes('bachelor')) degreeLevels.add('Bachelor');
+                                                else if (lowerDegree.includes('master')) degreeLevels.add('Master');
+                                                else if (lowerDegree.includes('doctor')) degreeLevels.add('Doctorate');
+                                                else if (lowerDegree.includes('associate')) degreeLevels.add('Associate');
+                                            }
+                                        });
+                                        if (degreeLevels.size > 0) degreeLevels.forEach(level => sets.degreeLevels.add(level));
+
+                                        if (normalizedUni) {
+                                            let uniState = universityToStateMap[normalizedUni] || 'Other';
+                                            sets.universities[normalizedUni] = uniState;
+                                            majors.forEach(m => sets.majors.add(m.normalized));
+                                            currentEducationHistory.push({ university: escapeHTML(normalizedUni), majors: majors, degrees: degrees, gradYear: educationGradYear, degreeLevels: [...degreeLevels] });
+                                        }
+                                    });
+                                }
+                            }
+
+                            const leadershipRaw = getCell('leadership');
+                            const leadershipPositions = hasData(leadershipRaw) ? leadershipRaw.split(/[\n,]+/).map(p => p.trim()).filter(Boolean) : [];
+                            leadershipPositions.forEach(p => sets.leadership.add(p));
+                            
+                            const awardsRaw = getCell('awards');
+                            const awards = hasData(awardsRaw) ? awardsRaw.split(/[\n,]+/).map(p => p.trim()).filter(Boolean) : [];
+                            awards.forEach(p => sets.awards.add(p));
+
+                            const militaryBranch = getCell('military');
+                            if (hasData(militaryBranch)) sets.military.add(militaryBranch);
+                            
+                            const greekAffiliationRaw = getCell('greek');
+                            let normalizedGreek = null;
+                            if (hasData(greekAffiliationRaw)) {
+                                normalizedGreek = normalizeName(greekAffiliationRaw, greekNormalizationMap);
+                                sets.greek.add(normalizedGreek);
+                            }
+
+                            const occupationRaw = getCell('occupation');
+                            let normalizedIndustry = null;
+                            if(hasData(occupationRaw)){
+                               normalizedIndustry = normalizeName(occupationRaw, occupationNormalizationMap);
+                               sets.industries[normalizedIndustry] = occupationToCategory[normalizedIndustry] || 'Other';
+                            }
+
+                            const consentText = getCell('consent')?.toLowerCase() || '';
+                            const email = getCell('email'); const phone = getCell('phone'); const instagram = getCell('instagram');
+                            let instagramHandle = null, instagramUrl = null;
+                            if (hasData(instagram)) {
+                                instagramHandle = instagram.startsWith('@') ? instagram : '@' + instagram;
+                                instagramUrl = `https://www.instagram.com/${instagramHandle.substring(1)}`;
                             }
                             
-                            state = foundLocation || parts[parts.length - 1].trim();
-                            if(state) sets.locations.add(state);
-                        }
-
-                        let currentEducationHistory = [];
-                        const educationRaw = getCell('education');
-                        if (hasData(educationRaw)) {
-                            educationRaw.split('\n').forEach(entry => {
-                                const uniMatch = entry.match(/University:\s*([^,]+)/);
-                                const majorMatch = entry.match(/Major\(s\):\s*(.+?)(?=,\s*Degree:|$)/);
-                                const degreeMatch = entry.match(/Degree:\s*(.+?)(?=,\s*Graduation Year:|$)/);
-                                const gradYearMatch = entry.match(/Graduation Year:\s*(\d{4})/);
-                                
-                                const normalizedUni = uniMatch && uniMatch[1] ? normalizeName(uniMatch[1], universityNormalizationMap) : null;
-                                const majors = majorMatch && majorMatch[1] ? majorMatch[1].split(/[\/,]+/).map(m => ({
-                                    original: m.trim(),
-                                    normalized: normalizeName(m, majorNormalizationMap)
-                                })).filter(m => m.normalized) : [];
-                                
-                                const degrees = degreeMatch && degreeMatch[1] ? degreeMatch[1].split(/[\/,]+/).map(d => normalizeName(d, degreeNormalizationMap)).filter(Boolean) : [];
-                                
-                                const educationGradYear = gradYearMatch && gradYearMatch[1] ? gradYearMatch[1] : null;
-
-                                const degreeLevels = new Set();
-                                degrees.forEach(degree => {
-                                    if(degree){
-                                        const lowerDegree = degree.toLowerCase();
-                                        if (lowerDegree.includes('bachelor')) degreeLevels.add('Bachelor');
-                                        else if (lowerDegree.includes('master')) degreeLevels.add('Master');
-                                        else if (lowerDegree.includes('doctor')) degreeLevels.add('Doctorate');
-                                        else if (lowerDegree.includes('associate')) degreeLevels.add('Associate');
-                                    }
-                                });
-                                if (degreeLevels.size > 0) {
-                                    degreeLevels.forEach(level => sets.degreeLevels.add(level));
-                                }
-
-                                if (normalizedUni) {
-                                    let uniState = universityToStateMap[normalizedUni];
-                                    if (!uniState) { // If not in the explicit map, try to infer from name
-                                        const allStateNames = Object.values(stateAbbreviationMap);
-                                        const foundState = allStateNames.find(stateName => normalizedUni.includes(stateName));
-                                        if (foundState) {
-                                            uniState = foundState;
+                            const currentSocials = [];
+                            if (isNewSheet) {
+                                const sType = getCell('newSocialType');
+                                const sUrl = getCell('newSocialUrl');
+                                if (hasData(sType) && hasData(sUrl)) {
+                                    const ts = sType.split('\n');
+                                    const us = sUrl.split('\n');
+                                    ts.forEach((t, j) => {
+                                        if (us[j] && t) {
+                                            let url = us[j].trim(); if (!/^(https?:\/\/)/i.test(url)) url = 'https://' + url;
+                                            let display = us[j].replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+                                            currentSocials.push({ type: escapeHTML(t.trim()), display: escapeHTML(display), url: escapeHTML(url) });
                                         }
-                                    }
-                                    sets.universities[normalizedUni] = uniState || 'Other';
-
-                                    majors.forEach(m => sets.majors.add(m.normalized));
-                                currentEducationHistory.push({ university: escapeHTML(normalizedUni), majors: majors, degrees: degrees, gradYear: educationGradYear, degreeLevels: [...degreeLevels] });
+                                    });
                                 }
+                            } else {
+                                const socialMediaRaw = getCell('socialMedia');
+                                if(hasData(socialMediaRaw)) {
+                                    socialMediaRaw.split('\n').forEach(line => {
+                                        const typeMatch = line.match(/Type(?:\s\(.*?\))?:\s*([^,]+)/i);
+                                        const handleMatch = line.match(/(?:Handle|URL):\s*(.*)/i);
+                                        if(typeMatch && handleMatch) {
+                                            const type = typeMatch[1].trim(); const handle = handleMatch[1].trim();
+                                            let url = handle; if (!/^(https?:\/\/)/i.test(url)) url = 'https://' + url;
+                                            let display = handle.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+                                            currentSocials.push({ type: escapeHTML(type), display: escapeHTML(display), url: escapeHTML(url) });
+                                        }
+                                    });
+                                }
+                            }
+                            
+                            const currentWebsites = [];
+                            if (isNewSheet) {
+                                const wType = getCell('newWebsiteType');
+                                const wUrl = getCell('newWebsiteUrl');
+                                if (hasData(wType) && hasData(wUrl)) {
+                                    const ts = wType.split('\n');
+                                    const us = wUrl.split('\n');
+                                    ts.forEach((t, j) => {
+                                        if (us[j] && t) {
+                                            let url = us[j].trim(); if (!/^(https?:\/\/)/i.test(url)) url = 'https://' + url;
+                                            let display = us[j].replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
+                                            currentWebsites.push({ type: escapeHTML(t.trim()), display: escapeHTML(display), url: escapeHTML(url) });
+                                        }
+                                    });
+                                }
+                            } else {
+                                const websitesRaw = getCell('websites');
+                                if (hasData(websitesRaw)) {
+                                    websitesRaw.split('\n').forEach(line => {
+                                        const typeMatch = line.match(/Type(?:\s\(.*?\))?:\s*([^,]+)/i);
+                                        const urlMatch = line.match(/URL:\s*(.*)/i);
+                                        if (typeMatch && urlMatch) {
+                                            const type = typeMatch[1].trim(); let url = urlMatch[1].trim();
+                                            if (url) {
+                                                const display = url.replace(/^(https?:\/\/)?(www\.)?/i, '').replace(/\/$/, '');
+                                                if (!/^(https?:\/\/)/i.test(url)) url = 'https://' + url;
+                                                currentWebsites.push({ type: escapeHTML(type), display: escapeHTML(display), url: escapeHTML(url) });
+                                            }
+                                        }
+                                    });
+                                }
+                            }
+
+                            allAlumniData.push({
+                                id: `${firstName.toLowerCase().replace(/\W/g, '-')}-${lastName.toLowerCase().replace(/\W/g, '-')}-${gradYear}-${Math.random().toString(36).substr(2, 5)}`,
+                                firstName: escapeHTML(firstName), lastName: escapeHTML(lastName), gradYear: escapeHTML(gradYear), photoUrl: getCell('photoUrl'), drbPhotoUrl: getCell('drbPhotoUrl'), city: escapeHTML(cityRaw), state: state,
+                                occupation: escapeHTML(occupationRaw), industry: normalizedIndustry, about: escapeHTML(getCell('about')), tenure: escapeHTML(getCell('tenure')), favoriteStep: escapeHTML(getCell('favoriteStep')),
+                                awards: awards.map(escapeHTML), greekAffiliation: normalizedGreek,
+                                hasMilitaryService: hasData(militaryBranch), militaryBranch: hasData(militaryBranch) ? escapeHTML(militaryBranch) : null, militaryRank: escapeHTML(getCell('rank')),
+                                hasLeadershipPositions: leadershipPositions.length > 0, leadershipPositions: leadershipPositions.map(escapeHTML),
+                                hasEducation: currentEducationHistory.length > 0, educationHistory: currentEducationHistory,
+                                universities: [...new Set(currentEducationHistory.map(edu => edu.university))],
+                                majors: [...new Set(currentEducationHistory.flatMap(edu => edu.majors.map(m => m.normalized)))],
+                                email: (consentText.includes('email') || isNewSheet) && hasData(email) ? escapeHTML(email) : null,
+                                phone: (consentText.includes('phone') || isNewSheet) && hasData(phone) ? escapeHTML(phone) : null,
+                                phoneToCompare: (consentText.includes('phone') || isNewSheet) && hasData(phone) ? phone.replace(/\D/g, '') : null,
+                                instagramHandle: (consentText.includes('social') || isNewSheet) && hasData(instagram) ? escapeHTML(instagramHandle) : null,
+                                instagramUrl: (consentText.includes('social') || isNewSheet) && hasData(instagram) ? escapeHTML(instagramUrl) : null,
+                                instagramHandleToCompare: (consentText.includes('social') || isNewSheet) && hasData(instagram) ? escapeHTML(instagram.replace(/^@/, '').toLowerCase()) : null,
+                                fullNameForLogin: (firstName + lastName).replace(/\s/g, '').toLowerCase(),
+                                socialMedia: currentSocials, websites: currentWebsites,
                             });
                         }
-                        
-                        const leadershipRaw = getCell('leadership');
-                        const leadershipPositions = hasData(leadershipRaw) ? leadershipRaw.split(/[\n,]+/).map(p => p.trim()).filter(Boolean) : [];
-                        leadershipPositions.forEach(p => sets.leadership.add(p));
-                        
-                        const awardsRaw = getCell('awards');
-                        const awards = hasData(awardsRaw) ? awardsRaw.split(/[\n,]+/).map(p => p.trim()).filter(Boolean) : [];
-                        awards.forEach(p => sets.awards.add(p));
-
-                        const militaryBranch = getCell('military');
-                        if (hasData(militaryBranch)) sets.military.add(militaryBranch);
-                        
-                        const greekAffiliationRaw = getCell('greek');
-                        let normalizedGreek = null;
-                        if (hasData(greekAffiliationRaw)) {
-                            normalizedGreek = normalizeName(greekAffiliationRaw, greekNormalizationMap);
-                            sets.greek.add(normalizedGreek);
-                        }
-
-                        const occupationRaw = getCell('occupation');
-                        let normalizedIndustry = null;
-                        if(hasData(occupationRaw)){
-                           normalizedIndustry = normalizeName(occupationRaw, occupationNormalizationMap);
-                           sets.industries[normalizedIndustry] = occupationToCategory[normalizedIndustry] || 'Other';
-                        }
-
-
-                        const consentText = getCell('consent')?.toLowerCase() || '';
-                        const email = getCell('email'); const phone = getCell('phone'); const instagram = getCell('instagram');
-                        let instagramHandle = null, instagramUrl = null;
-                        if (hasData(instagram)) {
-                            instagramHandle = instagram.startsWith('@') ? instagram : '@' + instagram;
-                            instagramUrl = `https://www.instagram.com/${instagramHandle.substring(1)}`;
-                        }
-                        
-                        const socialMediaRaw = getCell('socialMedia');
-                        const currentSocials = [];
-                        if(hasData(socialMediaRaw)) {
-                            socialMediaRaw.split('\n').forEach(line => {
-                                const typeMatch = line.match(/Type(?:\s\(.*?\))?:\s*([^,]+)/i);
-                                const handleMatch = line.match(/(?:Handle|URL):\s*(.*)/i);
-                                if(typeMatch && handleMatch) {
-                                    const type = typeMatch[1].trim(); const handle = handleMatch[1].trim();
-                                    let url = handle; if (!/^(https?:\/\/)/i.test(url)) url = 'https://' + url;
-                                    let display = handle.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '');
-                                    const lowerType = type.toLowerCase(); const lowerHandle = handle.toLowerCase();
-                                    if (lowerType === 'linkedin') { const username = (lowerHandle.split('/in/')[1] || '').split('/')[0]; if (username) { url = `https://www.linkedin.com/in/${username}`; display = username; }
-                                    } else if (lowerType === 'twitch') { const username = (lowerHandle.split('twitch.tv/')[1] || ''); if (username) { url = `https://www.twitch.tv/${username}`; display = username.split('/')[0]; } }
-                                currentSocials.push({ type: escapeHTML(type), display: escapeHTML(display), url: escapeHTML(url) });
-                                }
-                            });
-                        }
-                        
-                        const websitesRaw = getCell('websites');
-                        const currentWebsites = [];
-                        if (hasData(websitesRaw)) {
-                            websitesRaw.split('\n').forEach(line => {
-                                const typeMatch = line.match(/Type(?:\s\(.*?\))?:\s*([^,]+)/i);
-                                const urlMatch = line.match(/URL:\s*(.*)/i);
-                                if (typeMatch && urlMatch) {
-                                    const type = typeMatch[1].trim(); let url = urlMatch[1].trim();
-                                    if (url) {
-                                        const display = url.replace(/^(https?:\/\/)?(www\.)?/i, '').replace(/\/$/, '');
-                                        if (!/^(https?:\/\/)/i.test(url)) url = 'https://' + url;
-                                    currentWebsites.push({ type: escapeHTML(type), display: escapeHTML(display), url: escapeHTML(url) });
-                                    }
-                                }
-                            });
-                        }
-
-                        allAlumniData.push({
-                            id: `${firstName.toLowerCase().replace(/\W/g, '-')}-${lastName.toLowerCase().replace(/\W/g, '-')}-${gradYear}-${i}`,
-                        firstName: escapeHTML(firstName), lastName: escapeHTML(lastName), gradYear: escapeHTML(gradYear), photoUrl: getCell('photoUrl'), drbPhotoUrl: getCell('drbPhotoUrl'), city: escapeHTML(cityRaw), state: state,
-                        occupation: escapeHTML(occupationRaw), industry: normalizedIndustry, about: escapeHTML(getCell('about')), tenure: escapeHTML(getCell('tenure')), favoriteStep: escapeHTML(getCell('favoriteStep')),
-                        awards: awards.map(escapeHTML), greekAffiliation: normalizedGreek,
-                        hasMilitaryService: hasData(militaryBranch), militaryBranch: hasData(militaryBranch) ? escapeHTML(militaryBranch) : null, militaryRank: escapeHTML(getCell('rank')),
-                        hasLeadershipPositions: leadershipPositions.length > 0, leadershipPositions: leadershipPositions.map(escapeHTML),
-                            hasEducation: currentEducationHistory.length > 0, educationHistory: currentEducationHistory,
-                            universities: [...new Set(currentEducationHistory.map(edu => edu.university))],
-                            majors: [...new Set(currentEducationHistory.flatMap(edu => edu.majors.map(m => m.normalized)))],
-                        email: consentText.includes('email') && hasData(email) ? escapeHTML(email) : null,
-                        phone: consentText.includes('phone') && hasData(phone) ? escapeHTML(phone) : null,
-                            phoneToCompare: consentText.includes('phone') && hasData(phone) ? phone.replace(/\D/g, '') : null,
-                        instagramHandle: consentText.includes('social media') && hasData(instagram) ? escapeHTML(instagramHandle) : null,
-                        instagramUrl: consentText.includes('social media') && hasData(instagram) ? escapeHTML(instagramUrl) : null,
-                        instagramHandleToCompare: consentText.includes('social media') && hasData(instagram) ? escapeHTML(instagram.replace(/^@/, '').toLowerCase()) : null,
-                            fullNameForLogin: (firstName + lastName).replace(/\s/g, '').toLowerCase(),
-                            socialMedia: consentText.includes('social media') ? currentSocials : [], websites: currentWebsites,
-                        });
                     }
+
+                    processSheet(csvOldText, false);
+                    processSheet(csvNewText, true);
 
                     loginMessage.textContent = '';
                     loginBtn.disabled = false;
