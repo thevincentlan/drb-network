@@ -12,11 +12,20 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let currentSort = 'class'; // 'class' or 'alpha'
         let currentView = 'dashboard'; // 'dashboard', 'grid', 'timeline', 'map'
         let leafletMap = null;
-        let mapMarkers = [];
-        let currentSearchQuery = '';
-        let currentUserEmail = '';
         let faceCoords = {};
         let geocodeCache = {};
+
+        // Simple string hash to obscure URLs in face_coords.json and decouple from row IDs
+        function generateFaceKey(url) {
+            if (!url) return null;
+            let str = url.split('?')[0];
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                hash = ((hash << 5) - hash) + str.charCodeAt(i);
+                hash |= 0;
+            }
+            return Math.abs(hash).toString(36);
+        }
 
 
 
@@ -141,8 +150,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         const mainImageUrl = alumnus.photoUrl || defaultProfilePic;
                         const drbImageUrl = alumnus.drbPhotoUrl || mainImageUrl;
                         
-                        const mainPos = faceCoords[mainImageUrl] ? `${faceCoords[mainImageUrl].x}% ${faceCoords[mainImageUrl].y}%` : 'top center';
-                        const drbPos = faceCoords[drbImageUrl] ? `${faceCoords[drbImageUrl].x}% ${faceCoords[drbImageUrl].y}%` : 'top center';
+                        const mainPos = faceCoords[generateFaceKey(mainImageUrl)] ? `${faceCoords[generateFaceKey(mainImageUrl)].x}% ${faceCoords[generateFaceKey(mainImageUrl)].y}%` : 'top center';
+                        const drbPos = faceCoords[generateFaceKey(drbImageUrl)] ? `${faceCoords[generateFaceKey(drbImageUrl)].x}% ${faceCoords[generateFaceKey(drbImageUrl)].y}%` : 'top center';
 
                         let summaryHtml = '';
                         if (alumnus.occupation) summaryHtml += `<p><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 6h-4V4c0-1.11-.89-2-2-2h-4c-1.11 0-2 .89-2 2v2H4c-1.11 0-2 .89-2 2v11c0 1.11.89 2 2 2h16c1.11 0 2-.89 2-2V8c0-1.11-.89-2-2-2zM10 4h4v2h-4V4zm10 15H4V8h16v11z"/></svg>${alumnus.occupation}</p>`;
@@ -279,8 +288,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                                 if (!hasDrbPhoto) {
                                     cardDiv.classList.add('no-hover');
                                 }
-                                const mainPos = faceCoords[mainImageUrl] ? `${faceCoords[mainImageUrl].x}% ${faceCoords[mainImageUrl].y}%` : 'top center';
-                                const drbPos = faceCoords[drbImageUrl] ? `${faceCoords[drbImageUrl].x}% ${faceCoords[drbImageUrl].y}%` : 'top center';
+                                const mainPos = faceCoords[generateFaceKey(mainImageUrl)] ? `${faceCoords[generateFaceKey(mainImageUrl)].x}% ${faceCoords[generateFaceKey(mainImageUrl)].y}%` : 'top center';
+                                const drbPos = faceCoords[generateFaceKey(drbImageUrl)] ? `${faceCoords[generateFaceKey(drbImageUrl)].x}% ${faceCoords[generateFaceKey(drbImageUrl)].y}%` : 'top center';
 
                                 cardDiv.innerHTML = `
                                     <div class="img-wrapper">
@@ -317,8 +326,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         if (!hasDrbPhoto) {
                             cardDiv.classList.add('no-hover');
                         }
-                        const mainPos = faceCoords[mainImageUrl] ? `${faceCoords[mainImageUrl].x}% ${faceCoords[mainImageUrl].y}%` : 'top center';
-                        const drbPos = faceCoords[drbImageUrl] ? `${faceCoords[drbImageUrl].x}% ${faceCoords[drbImageUrl].y}%` : 'top center';
+                        const mainPos = faceCoords[generateFaceKey(mainImageUrl)] ? `${faceCoords[generateFaceKey(mainImageUrl)].x}% ${faceCoords[generateFaceKey(mainImageUrl)].y}%` : 'top center';
+                        const drbPos = faceCoords[generateFaceKey(drbImageUrl)] ? `${faceCoords[generateFaceKey(drbImageUrl)].x}% ${faceCoords[generateFaceKey(drbImageUrl)].y}%` : 'top center';
 
                         cardDiv.innerHTML = `
                             <div class="img-wrapper">
@@ -365,8 +374,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             frontImg.src = alumnus.photoUrl || defaultProfilePic;
             backImg.src = alumnus.drbPhotoUrl || (alumnus.photoUrl || defaultProfilePic);
             
-            frontImg.style.objectPosition = faceCoords[frontImg.src] ? `${faceCoords[frontImg.src].x}% ${faceCoords[frontImg.src].y}%` : 'top center';
-            backImg.style.objectPosition = faceCoords[backImg.src] ? `${faceCoords[backImg.src].x}% ${faceCoords[backImg.src].y}%` : 'top center';
+            frontImg.style.objectPosition = faceCoords[generateFaceKey(frontImg.src)] ? `${faceCoords[generateFaceKey(frontImg.src)].x}% ${faceCoords[generateFaceKey(frontImg.src)].y}%` : 'top center';
+            backImg.style.objectPosition = faceCoords[generateFaceKey(backImg.src)] ? `${faceCoords[generateFaceKey(backImg.src)].x}% ${faceCoords[generateFaceKey(backImg.src)].y}%` : 'top center';
 
             // Show Edit Button logic
             imageContainer.classList.toggle('no-hover', !alumnus.drbPhotoUrl);
@@ -477,36 +486,30 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const container = document.querySelector('.memories-gallery');
             if (!container) return;
 
-            // Collect only DRB photos from alumni
-            const allMemories = allAlumniData
-                .filter(a => a.drbPhotoUrl && a.drbPhotoUrl !== defaultProfilePic)
-                .map(a => ({
-                    url: a.drbPhotoUrl,
-                    name: `${a.firstName} ${a.lastName}`,
-                    year: a.gradYear,
-                    id: a.id
-                }));
+            const allMemories = [];
+            filteredAlumni.forEach(a => {
+                if (a.photoUrl && a.photoUrl !== defaultProfilePic) allMemories.push({ url: a.photoUrl, id: generateFaceKey(a.photoUrl) });
+                if (a.drbPhotoUrl && a.drbPhotoUrl !== defaultProfilePic) allMemories.push({ url: a.drbPhotoUrl, id: generateFaceKey(a.drbPhotoUrl) });
+            });
 
             if (allMemories.length === 0) {
                 container.innerHTML = '<p class="memories-empty">No photos uploaded yet. Be the first to share a memory!</p>';
                 return;
             }
 
-            // Shuffle for variety
+            // Randomize photos
             for (let i = allMemories.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [allMemories[i], allMemories[j]] = [allMemories[j], allMemories[i]];
             }
 
-            container.innerHTML = allMemories.map(m => `
-                <a href="#profile=${m.id}" class="memory-card">
-                    <img src="${m.url}" alt="${m.name}" loading="lazy" onerror="this.closest('.memory-card').style.display='none'">
-                    <div class="memory-overlay">
-                        <span class="memory-name">${m.name}</span>
-                        <span class="memory-year">Class of ${m.year}</span>
-                    </div>
-                </a>
-            `).join('');
+            // Only show up to 50 photos to avoid lag
+            container.innerHTML = allMemories.slice(0, 50).map(m => {
+                 const imgObjPos = faceCoords[m.id] ? `${faceCoords[m.id].x}% ${faceCoords[m.id].y}%` : 'center';
+                 return `<div class="memory-card">
+                     <img src="${m.url}" alt="DRB Memory" loading="lazy" style="object-position: ${imgObjPos}" onerror="this.closest('.memory-card').style.display='none'">
+                 </div>`;
+            }).join('');
 
             // Update memory count
             const countEl = document.querySelector('.memories-count');

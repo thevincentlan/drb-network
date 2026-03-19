@@ -23,6 +23,17 @@ function transformDriveUrl(url) {
     return urlStr;
 }
 
+function generateFaceKey(url) {
+    if (!url) return null;
+    let str = url.split('?')[0];
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash) + str.charCodeAt(i);
+        hash |= 0;
+    }
+    return Math.abs(hash).toString(36);
+}
+
 async function fetchCsvUrls() {
     console.log('Fetching CSV metadata from Apps Script API...');
     const fetch = (await import('node-fetch')).default;
@@ -30,40 +41,60 @@ async function fetchCsvUrls() {
     if (!resp.ok) throw new Error(`HTTP error: ${resp.status}`);
     const data = await resp.json();
     
-    const records1 = parse(data.csvOld, { columns: true, skip_empty_lines: true });
+    // Exact logic from app.js to generate the same IDs
+    let records1 = [];
+    try { if (data.csvOld) records1 = parse(data.csvOld, { skip_empty_lines: true }); } catch(e){}
     let records2 = [];
-    try { if (data.csvNew) records2 = parse(data.csvNew, { columns: true, skip_empty_lines: true }); } catch(e){}
-    const records = [...records1, ...records2];
+    try { if (data.csvNew) records2 = parse(data.csvNew, { skip_empty_lines: true }); } catch(e){}
     
-    const uniqueUrls = new Set();
-    records.forEach(row => {
-        const photoKey = Object.keys(row).find(k => k.toLowerCase().includes('photo for your profile'));
-        const drbKey = Object.keys(row).find(k => k.toLowerCase().includes('photo of you on drb'));
+    const headersOld = records1.length > 0 ? records1.shift() : [];
+    const headersNew = records2.length > 0 ? records2.shift() : [];
+    
+    const mapRowToObj = (row, headers) => {
+        const obj = {};
+        for(let i=0; i<headers.length; i++){
+            obj[headers[i]] = row[i];
+        }
+        return obj;
+    };
+    
+    const allRecords = [
+        ...records1.map(r => mapRowToObj(r, headersOld)),
+        ...records2.map(r => mapRowToObj(r, headersNew))
+    ];
+
+    const jobs = [];
+    
+    allRecords.forEach((row, index) => {
+        const id = String(index);
         
-        const photoMatch = photoKey && row[photoKey] ? row[photoKey].match(/https?:\/\/[^\s]+/) : null;
-        const drbMatch = drbKey && row[drbKey] ? row[drbKey].match(/https?:\/\/[^\s]+/) : null;
+        const photoKey = Object.keys(row).find(k => k && k.toLowerCase().includes('photo for your profile'));
+        const drbKey = Object.keys(row).find(k => k && k.toLowerCase().includes('photo of you on drb'));
         
-        if (photoMatch) uniqueUrls.add(transformDriveUrl(photoMatch[0]));
-        if (drbMatch) uniqueUrls.add(transformDriveUrl(drbMatch[0]));
+        const photoMatch = photoKey && row[photoKey] ? String(row[photoKey]).match(/https?:\/\/[^\s]+/) : null;
+        const drbMatch = drbKey && row[drbKey] ? String(row[drbKey]).match(/https?:\/\/[^\s]+/) : null;
+        
+        let mainUrl = photoMatch ? transformDriveUrl(photoMatch[0]) : null;
+        let drbUrl = drbMatch ? transformDriveUrl(drbMatch[0]) : null;
+        
+        if (mainUrl && !IGNORE_URLS.some(i => mainUrl.includes('DRB%20Logo'))) {
+            jobs.push({ id: generateFaceKey(mainUrl), url: mainUrl });
+        }
+        if (drbUrl && !IGNORE_URLS.some(i => drbUrl.includes('DRB%20Logo'))) {
+            jobs.push({ id: generateFaceKey(drbUrl), url: drbUrl });
+        }
     });
 
-    return Array.from(uniqueUrls).filter(u => u && !IGNORE_URLS.some(i => u.includes('DRB%20Logo')));
+    return jobs;
 }
 
 async function run() {
-    const urlsToScan = await fetchCsvUrls();
-    console.log(`Found ${urlsToScan.length} unique photos to process.`);
-    if (urlsToScan.length === 0) return;
+    const jobsToScan = await fetchCsvUrls();
+    console.log(`Found ${jobsToScan.length} unique photos to process.`);
+    if (jobsToScan.length === 0) return;
 
+    // Overwrite the entire file since row IDs might change if CSV is resorted
     let existingData = {};
-    if (fs.existsSync(OUTPUT_FILE)) {
-        try { existingData = JSON.parse(fs.readFileSync(OUTPUT_FILE, 'utf8')); } catch(e) {}
-    }
-
-    // Filter out already processed urls
-    const urls = urlsToScan.filter(u => !existingData[u]);
-    console.log(`${urls.length} images remaining to scan.`);
-    if (urls.length === 0) return;
 
     console.log('Launching Headless Chrome via Puppeteer...');
     const browser = await puppeteer.launch({ headless: 'new' });
@@ -76,15 +107,12 @@ async function run() {
     await page.addScriptTag({ url: 'https://cdn.jsdelivr.net/npm/@vladmandic/face-api@1.7.12/dist/face-api.min.js' });
 
     // Inject the runner logic into the page
-    const results = await page.evaluate(async (imageUrls) => {
-        // Since we cannot load models from file:// easily due to CORS in about:blank, 
-        // we load it from the unpkg CDN for the script, but wait!
-        // We can just load the models from the unpkg CDN too!
+    const results = await page.evaluate(async (jobs) => {
         await faceapi.nets.tinyFaceDetector.loadFromUri('https://cdn.jsdelivr.net/npm/@vladmandic/face-api/model');
         
         const data = {};
-        for(let i=0; i<imageUrls.length; i++){
-            const url = imageUrls[i];
+        for(let i=0; i<jobs.length; i++){
+            const { id, url } = jobs[i];
             try {
                 const img = await new Promise((resolve, reject) => {
                     const imgEl = new Image();
@@ -101,22 +129,21 @@ async function run() {
                     const centerY = box.y + (box.height / 2);
                     const xPercent = Math.max(0, Math.min(100, Math.round((centerX / img.width) * 100)));
                     const yPercent = Math.max(0, Math.min(100, Math.round((centerY / img.height) * 100)));
-                    data[url] = { x: xPercent, y: yPercent };
+                    data[id] = { x: xPercent, y: yPercent };
                 } else {
-                    data[url] = { x: 50, y: 20 };
+                    data[id] = { x: 50, y: 20 };
                 }
             } catch(e) {
-                data[url] = { x: 50, y: 20 };
+                data[id] = { x: 50, y: 20 };
             }
         }
         return data;
-    }, urls);
+    }, jobsToScan);
 
     await browser.close();
 
-    // Merge and save
-    Object.assign(existingData, results);
-    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(existingData, null, 2));
+    // Overwrite existing data because if rows moved, IDs shifted.
+    fs.writeFileSync(OUTPUT_FILE, JSON.stringify(results, null, 2));
     console.log(`Scan complete! Saved to ${OUTPUT_FILE}`);
 }
 
