@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DRB Network Database</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="login-screen">
+        <div class="login-box">
+            <h1>DRB Network Database</h1>
+            <p id="login-description">An email listed on your profile is strictly required to log in. We will send you a secure 6-digit access code.</p>
+            <div id="login-form">
+                <div id="email-step">
+                    <input type="email" id="login-email" placeholder="Enter your email address">
+                    <button id="login-btn">Send Login Code</button>
+                    <p id="login-message"></p>
+                </div>
+                <div id="otp-step" style="display: none;">
+                    <input type="text" id="login-otp" placeholder="Enter 6-digit code" maxlength="6">
+                    <button id="verify-btn">Verify Code & Access</button>
+                    <p id="otp-message"></p>
+                    <button id="resend-btn" style="background: none; color: var(--carolina-blue); border: none; cursor: pointer; text-decoration: underline; margin-top: 10px; padding: 0;">Try a different email</button>
+                </div>
+                <div id="survey-link-container" style="margin-top: 20px;">
+                    <a href="https://form.jotform.com/252448415010043" target="_blank" rel="noopener noreferrer" style="color: var(--carolina-blue);">Complete the survey to get access.</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <header id="page-top-bar">
+        <div id="page-header">
+            <h1>DRB Network Database</h1>
+            <p>continuing a legacy of success</p>
+        </div>
+        <div class="header-controls">
+            <div id="sort-control">
+                <button id="sort-by-class-btn" class="sort-btn active">By Class</button>
+                <button id="sort-by-alpha-btn" class="sort-btn">Alphabetical</button>
+            </div>
+            <button id="toggle-filters-btn">Filters</button>
+        </div>
+    </header>
+
+    <div id="filter-panel">
+        <div id="filter-options">
+             <div class="filter-group">
+                <label class="master-filter-control" for="class-year-master-filter">
+                    <input type="checkbox" id="class-year-master-filter">
+                    <span class="custom-checkbox"></span>
+                    <span class="filter-label-text">Class Year</span>
+                    <span class="arrow"></span>
+                </label>
+                <div id="class-year-options-container" class="options-container"></div>
+            </div>
+            <div class="filter-group">
+                 <label class="master-filter-control" for="honorees-master-filter">
+                    <input type="checkbox" id="honorees-master-filter">
+                    <span class="custom-checkbox"></span>
+                    <span class="filter-label-text">DRB Honorees</span>
+                    <span class="arrow"></span>
+                </label>
+                <div id="honorees-options-container" class="options-container">
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="drb-awards-sub-filter">
+                            <input type="checkbox" id="drb-awards-sub-filter">
+                            <span class="filter-label-text">DRB Awards</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="drb-awards-options-container" class="options-container"></div>
+                    </div>
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="drb-leadership-sub-filter">
+                            <input type="checkbox" id="drb-leadership-sub-filter">
+                            <span class="filter-label-text">DRB Leadership</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="drb-leadership-options-container" class="options-container"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-group">
+                 <label class="master-filter-control" for="education-master-filter">
+                    <input type="checkbox" id="education-master-filter">
+                    <span class="custom-checkbox"></span>
+                    <span class="filter-label-text">Higher Education</span>
+                    <span class="arrow"></span>
+                </label>
+                <div id="education-options-container" class="options-container">
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="university-sub-filter">
+                            <input type="checkbox" id="university-sub-filter">
+                            <span class="filter-label-text">Universities</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="university-options-container" class="options-container"></div>
+                    </div>
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="major-sub-filter">
+                            <input type="checkbox" id="major-sub-filter">
+                            <span class="filter-label-text">Majors</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="major-options-container" class="options-container"></div>
+                    </div>
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="degree-sub-filter">
+                            <input type="checkbox" id="degree-sub-filter">
+                            <span class="filter-label-text">Degree Level</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="degree-options-container" class="options-container"></div>
+                    </div>
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="greek-sub-filter">
+                            <input type="checkbox" id="greek-sub-filter">
+                            <span class="filter-label-text">Greek Affiliation</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="greek-options-container" class="options-container"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="filter-group">
+                 <label class="master-filter-control" for="career-master-filter">
+                    <input type="checkbox" id="career-master-filter">
+                    <span class="custom-checkbox"></span>
+                    <span class="filter-label-text">Career</span>
+                    <span class="arrow"></span>
+                </label>
+                <div id="career-options-container" class="options-container">
+                    <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="industry-sub-filter">
+                            <input type="checkbox" id="industry-sub-filter">
+                            <span class="filter-label-text">Industry</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="industry-options-container" class="options-container"></div>
+                    </div>
+                     <div class="filter-group">
+                        <label class="master-filter-control sub-master-control" for="military-sub-filter">
+                            <input type="checkbox" id="military-sub-filter">
+                            <span class="filter-label-text">Military Service</span>
+                            <span class="arrow"></span>
+                        </label>
+                        <div id="military-options-container" class="options-container"></div>
+                    </div>
+                </div>
+            </div>
+             <div class="filter-group">
+                <label class="master-filter-control" for="location-master-filter">
+                    <input type="checkbox" id="location-master-filter">
+                    <span class="custom-checkbox"></span>
+                    <span class="filter-label-text">Location</span>
+                    <span class="arrow"></span>
+                </label>
+                <div id="location-options-container" class="options-container"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div id="app-container">
+        <main id="main-content">
+            <div id="main-view">
+                 <p id="loading-message">Loading profiles...</p>
+                 <div id="profiles-container"></div>
+            </div>
+
+            <div id="profile-view" style="display: none;">
+                <a href="#" class="back-button">&larr; Back to All Alumni</a>
+                <div id="profile-card-full">
+                    <div id="profile-main">
+                        <div class="profile-image-container">
+                            <img class="front-face" src="" alt="Profile Photo">
+                            <img class="back-face" src="" alt="DRB Photo">
+                        </div>
+                        <h2 class="name"></h2>
+                        <p class="year"></p>
+                        <p class="city"></p>
+                        <div id="profile-drb-stats"></div>
+                        <div id="profile-contact-info"></div>
+                    </div>
+                    <div id="profile-details"></div>
+                </div>
+            </div>
+        </main>
+    </div>
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
