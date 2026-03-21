@@ -1064,6 +1064,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const resendBtn = document.getElementById('resend-btn');
             const searchInput = document.getElementById('search-input');
             const resetFiltersBtn = document.getElementById('reset-filters-btn');
+
+            if (typeof supabase === 'undefined' || !supabase?.auth) {
+                if (loginBtn) loginBtn.disabled = true;
+                if (verifyBtn) verifyBtn.disabled = true;
+                if (loginMessage) {
+                    loginMessage.textContent = 'Authentication failed to initialize. Please verify the Supabase script and keys.';
+                    loginMessage.classList.add('error');
+                }
+                return;
+            }
+
             if (resetFiltersBtn) {
                 resetFiltersBtn.addEventListener('click', () => {
                     document.querySelectorAll('.filter-group input[type="checkbox"]').forEach(cb => {
