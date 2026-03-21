@@ -3,16 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#0a0e17">
     <title>DRB Network Database</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="supabaseClient.js"></script>
     <link rel="stylesheet" href="styles.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 </head>
 <body>
+<div class="bg-glow"></div>
 <div id="login-screen">
         <div class="login-box">
             <h1>DRB Network Database</h1>
@@ -62,6 +66,10 @@
     </header>
 
     <div id="filter-panel">
+        <div class="filter-header" style="display:flex;justify-content:space-between;align-items:center;">
+             <h3 style="margin: 0;">Filters</h3>
+             <button id="reset-filters-btn" class="drb-btn secondary" style="padding: 4px 10px; font-size: 0.8rem; height: auto;">Reset Filters</button>
+        </div>
         <div id="filter-options">
              <div class="filter-group">
                 <label class="master-filter-control" for="class-year-master-filter">

@@ -3,3 +3,5 @@ google_script/debug_*.json
 google_script/dump.json
 google_script/output.txt
 secrets.js
+.env
+node_modules/
