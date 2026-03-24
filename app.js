@@ -1,4 +1,4 @@
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwMh0iDxIrWzo6RsDDG3fZAA_MIWiz2ogijCmBAFWvbImzaLJePk59yJlQE-yjGL5KXRA/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzW-MV2nVXn-96vggcO78oLifVn6oPIYHP63NA9a_gdyODhHIBpdpJSgqUNtsqxHGqIjg/exec';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CONFIG_ADMIN_PASSWORD : null;
 
@@ -33,13 +33,41 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let lastNavigationTime = 0;
         let allowedEmails = new Set();
         let currentSort = 'class'; // 'class' or 'alpha'
-        let currentView = 'dashboard'; // 'dashboard', 'grid', 'timeline', 'map'
+        let currentView = 'dashboard'; // 'dashboard', 'map', 'memories'
+        let currentFilterMode = 'union'; // 'union' or 'intersection'
         let leafletMap = null;
         let mapMarkers = [];
         let currentSearchQuery = '';
         let currentUserEmail = '';
         let faceCoords = {};
         let geocodeCache = {};
+        let contactPreferences = {};
+        let greekAffiliations = {};
+        const REQUEST_MILITARY_BRANCH_OPTIONS = ['Air Force', 'Army', 'Coast Guard', 'Marine Corps', 'Navy', 'National Guard', 'Space Force'];
+        const REQUEST_STATE_OPTIONS = [...new Set(Object.values(stateAbbreviationMap))].sort((a, b) => a.localeCompare(b));
+        const REQUEST_UNIVERSITY_OPTIONS = [...new Set(
+            [...Object.values(universityNormalizationMap), ...Object.keys(universityToStateMap)]
+                .map(value => normalizeName(value, universityNormalizationMap))
+                .filter(Boolean)
+        )].sort((a, b) => a.localeCompare(b));
+        const REQUEST_MAJOR_OPTIONS = [...new Set(
+            [...Object.keys(majorToCategory), ...Object.values(majorNormalizationMap)]
+                .map(value => normalizeName(value, majorNormalizationMap))
+                .filter(Boolean)
+        )].sort((a, b) => a.localeCompare(b));
+        const REQUEST_DEGREE_OPTIONS = [...new Set([
+            ...Object.values(degreeNormalizationMap),
+            "Associate's Degree",
+            "Bachelor's Degree",
+            "Master's Degree",
+            'Doctor of Philosophy',
+            'Doctorate',
+            'JD',
+            'MD',
+            'PharmD'
+        ])].sort((a, b) => a.localeCompare(b));
+        const REQUEST_GREEK_OPTIONS = [...new Set(Object.values(greekNormalizationMap))].sort((a, b) => a.localeCompare(b));
+        const REQUEST_OCCUPATION_OPTIONS = [...new Set(Object.values(occupationNormalizationMap))].sort((a, b) => a.localeCompare(b));
 
         // Simple string hash to obscure URLs in face_coords.json and decouple from row IDs
         function generateFaceKey(url) {
@@ -53,6 +81,37 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             return Math.abs(hash).toString(36);
         }
 
+        function getAlumnusKey(firstName, lastName, gradYear) {
+            return `${firstName || ''}-${lastName || ''}-${gradYear || ''}`.toLowerCase().replace(/\s+/g, '');
+        }
+
+        async function loadContactPreferences() {
+            try {
+                const response = await fetch('data/contact_preferences.json', { cache: 'no-store' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                contactPreferences = await response.json();
+            } catch (error) {
+                contactPreferences = {};
+                console.warn('Failed to load contact preferences. Defaulting to hidden contact info.', error);
+            }
+        }
+
+        async function loadGreekAffiliations() {
+            try {
+                const response = await fetch('data/greek_affiliations.json', { cache: 'no-store' });
+                if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                const rawAffiliations = await response.json();
+                greekAffiliations = Object.fromEntries(
+                    Object.entries(rawAffiliations)
+                        .map(([key, value]) => [key, normalizeGreekAffiliation(value)])
+                        .filter(([, value]) => value)
+                );
+            } catch (error) {
+                greekAffiliations = {};
+                console.warn('Failed to load Greek affiliations supplement.', error);
+            }
+        }
+
 
 
 
@@ -64,9 +123,19 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             });
         };
 
+        function canonicalizeText(value) {
+            return String(value || '')
+                .replace(/[\u2018\u2019]/g, "'")
+                .replace(/[\u201C\u201D]/g, '"')
+                .replace(/[\u2013\u2014]/g, '-')
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
         function normalizeName(name, map) {
             if (!name) return '';
-            const lowerName = name.trim().toLowerCase();
+            const canonicalName = canonicalizeText(name);
+            const lowerName = canonicalName.toLowerCase();
             const sortedKeys = Object.keys(map).sort((a, b) => b.length - a.length);
             
             // First pass: exact match
@@ -80,7 +149,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             }
 
             const exceptions = ['of', 'a', 'the', 'and', 'an', 'in', 'on', 'at', 'for'];
-            return name.trim().split(/\s+/).map((word, index) => {
+            return canonicalName.split(/\s+/).map((word, index) => {
                 const lowerWord = word.toLowerCase();
                 if (index > 0 && exceptions.includes(lowerWord)) { return lowerWord; }
                 
@@ -95,6 +164,98 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
             }).join(' ');
         }
+
+        const awardNormalizationMap = {
+            'rookie of the year': 'Rookie OTY'
+        };
+
+        const invalidAwardPatterns = [
+            /^did we have awards\??$/i,
+            /^n\/?a$/i,
+            /^none$/i,
+            /^no$/i
+        ];
+
+        function normalizeGreekAffiliation(value) {
+            const canonicalValue = canonicalizeText(value)
+                .replace(/\s+(?:fraternity|sorority)(?:,)?\s+(?:incorporated|inc\.?)$/i, '')
+                .trim();
+
+            if (!canonicalValue || /^n\/?a$/i.test(canonicalValue) || /^none$/i.test(canonicalValue)) {
+                return '';
+            }
+
+            return normalizeName(canonicalValue, greekNormalizationMap);
+        }
+
+        function normalizeAwardName(value) {
+            const canonicalValue = canonicalizeText(value);
+            if (!canonicalValue || invalidAwardPatterns.some(pattern => pattern.test(canonicalValue))) {
+                return '';
+            }
+
+            return awardNormalizationMap[canonicalValue.toLowerCase()] || canonicalValue;
+        }
+
+        function parseDegreeInfo(rawDegree) {
+            const degreeValues = canonicalizeText(rawDegree)
+                .split(',')
+                .map(value => value.trim())
+                .filter(value => value && !/^graduation year:?/i.test(value) && !/^n\/?a$/i.test(value));
+
+            const degrees = degreeValues
+                .map(value => normalizeName(value, degreeNormalizationMap) || value)
+                .filter(Boolean);
+
+            const degreeLevels = [...new Set(degrees.map(degree => {
+                const lower = degree.toLowerCase();
+                if (lower.includes('associate')) return 'Associate';
+                if (lower.includes('bachelor')) return 'Bachelor';
+                if (lower.includes('master') || lower.includes('mlis')) return 'Master';
+                if (lower.includes('doctor') || lower.includes('medicine') || lower.includes('pharmd') || lower.includes('jd')) return 'Doctorate';
+                return null;
+            }).filter(Boolean))];
+
+            return { degrees, degreeLevels };
+        }
+
+        function extractIndustryTags(occupation, storedIndustry = '') {
+            const text = canonicalizeText(occupation).toLowerCase();
+            const matches = [];
+
+            if (text) {
+                const sortedKeys = Object.keys(occupationNormalizationMap).sort((a, b) => b.length - a.length);
+                sortedKeys.forEach(key => {
+                    const normalizedKey = canonicalizeText(key).toLowerCase();
+                    const escapedKey = normalizedKey
+                        .replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+                        .replace(/\s+/g, '\\s+');
+                    const regex = new RegExp(`(^|[^a-z0-9])${escapedKey}(?=$|[^a-z0-9])`, 'i');
+
+                    if (regex.test(text)) {
+                        const mapped = occupationNormalizationMap[key];
+                        if (mapped && !matches.includes(mapped)) matches.push(mapped);
+                    }
+                });
+            }
+
+            const normalizedStoredIndustry = storedIndustry ? normalizeName(storedIndustry, occupationNormalizationMap) : '';
+            if (normalizedStoredIndustry && !matches.includes(normalizedStoredIndustry)) {
+                matches.push(normalizedStoredIndustry);
+            }
+
+            if (matches.length === 0 && occupation) {
+                const fallback = normalizeName(occupation, occupationNormalizationMap);
+                if (fallback) matches.push(fallback);
+            }
+
+            const techSpecific = ['Software Engineering', 'AI & Machine Learning', 'Information Technology', 'Data Science', 'Product Management'];
+            if (matches.includes('General Engineering') && matches.some(tag => techSpecific.includes(tag))) {
+                return matches.filter(tag => tag !== 'General Engineering');
+            }
+
+            return matches;
+        }
         
         const mainView = document.getElementById('dashboard-view');
         const profileView = document.getElementById('profile-view');
@@ -104,8 +265,131 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let renderTimeout;
         const renderProfiles = () => {
             if (renderTimeout) cancelAnimationFrame(renderTimeout);
-            renderTimeout = requestAnimationFrame(renderProfilesImpl);
+            renderTimeout = requestAnimationFrame(() => renderCurrentView());
         };
+
+        function getCheckedValues(selector) {
+            return new Set(Array.from(document.querySelectorAll(selector)).map(cb => cb.value));
+        }
+
+        function isFilterChecked(id) {
+            return !!document.getElementById(id)?.checked;
+        }
+
+        function buildActiveFilterCriteria() {
+            const classYears = getCheckedValues('#class-year-options-container input:checked');
+            const awards = getCheckedValues('#drb-awards-options-container input:checked');
+            const leadership = getCheckedValues('#drb-leadership-options-container input:checked');
+            const universities = getCheckedValues('#university-options-container .university-sub-checkbox:checked');
+            const majors = getCheckedValues('#major-options-container .major-sub-checkbox:checked');
+            const degrees = getCheckedValues('#degree-options-container input:checked');
+            const greek = getCheckedValues('#greek-options-container input:checked');
+            const industries = getCheckedValues('#industry-options-container .industry-sub-checkbox:checked');
+            const military = getCheckedValues('#military-options-container input:checked');
+            const locations = getCheckedValues('#location-options-container input:checked');
+
+            const criteria = [];
+
+            if (classYears.size > 0) {
+                criteria.push({
+                    key: 'classYears',
+                    matches: alum => classYears.has(alum.classYear || alum.gradYear)
+                });
+            }
+
+            if (awards.size > 0) {
+                criteria.push({
+                    key: 'awards',
+                    matches: alum => alum.awards.some(award => awards.has(award))
+                });
+            }
+
+            if (leadership.size > 0) {
+                criteria.push({
+                    key: 'leadership',
+                    matches: alum => alum.leadershipPositions.some(position => leadership.has(position))
+                });
+            }
+
+            if (isFilterChecked('honorees-master-filter') && awards.size === 0 && leadership.size === 0) {
+                criteria.push({
+                    key: 'honoreesPresence',
+                    matches: alum => alum.awards.length > 0 || alum.leadershipPositions.length > 0
+                });
+            }
+
+            if (universities.size > 0) {
+                criteria.push({
+                    key: 'universities',
+                    matches: alum => alum.educationHistory.some(edu => universities.has(edu.university))
+                });
+            }
+
+            if (majors.size > 0) {
+                criteria.push({
+                    key: 'majors',
+                    matches: alum => alum.educationHistory.some(edu => edu.majors.some(major => majors.has(major.normalized)))
+                });
+            }
+
+            if (degrees.size > 0) {
+                criteria.push({
+                    key: 'degrees',
+                    matches: alum => alum.educationHistory.some(edu => edu.degreeLevels.some(level => degrees.has(level)))
+                });
+            }
+
+            if (greek.size > 0) {
+                criteria.push({
+                    key: 'greek',
+                    matches: alum => greek.has(alum.greekAffiliation)
+                });
+            }
+
+            if (isFilterChecked('education-master-filter') && universities.size === 0 && majors.size === 0 && degrees.size === 0 && greek.size === 0) {
+                criteria.push({
+                    key: 'educationPresence',
+                    matches: alum => alum.hasEducation || !!alum.greekAffiliation
+                });
+            }
+
+            if (industries.size > 0) {
+                criteria.push({
+                    key: 'industries',
+                    matches: alum => alum.industries.some(industry => industries.has(industry))
+                });
+            }
+
+            if (military.size > 0) {
+                criteria.push({
+                    key: 'military',
+                    matches: alum => military.has(alum.militaryBranch)
+                });
+            }
+
+            if (isFilterChecked('career-master-filter') && industries.size === 0 && military.size === 0) {
+                criteria.push({
+                    key: 'careerPresence',
+                    matches: alum => alum.industries.length > 0 || alum.hasMilitaryService
+                });
+            }
+
+            if (locations.size > 0) {
+                criteria.push({
+                    key: 'locations',
+                    matches: alum => locations.has(alum.state)
+                });
+            }
+
+            if (isFilterChecked('location-master-filter') && locations.size === 0) {
+                criteria.push({
+                    key: 'locationPresence',
+                    matches: alum => !!alum.state
+                });
+            }
+
+            return criteria;
+        }
 
         function filterAlumni(data) {
             // Apply name search filter
@@ -122,70 +406,14 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const classYearMaster = document.getElementById('class-year-master-filter');
             if (!classYearMaster) return searchFiltered;
 
-            const activeFilters = {
-                classYears: { active: classYearMaster.checked, values: new Set(Array.from(document.querySelectorAll('#class-year-options-container input:checked')).map(cb => cb.value)) },
-                honorees: { active: document.getElementById('honorees-master-filter').checked, awards: new Set(Array.from(document.querySelectorAll('#drb-awards-options-container input:checked')).map(cb => cb.value)), leadership: new Set(Array.from(document.querySelectorAll('#drb-leadership-options-container input:checked')).map(cb => cb.value))},
-                education: { active: document.getElementById('education-master-filter').checked, universities: new Set(Array.from(document.querySelectorAll('#university-options-container .university-sub-checkbox:checked')).map(cb => cb.value)), majors: new Set(Array.from(document.querySelectorAll('#major-options-container .major-sub-checkbox:checked')).map(cb => cb.value)), degrees: new Set(Array.from(document.querySelectorAll('#degree-options-container input:checked')).map(cb => cb.value)), greek: new Set(Array.from(document.querySelectorAll('#greek-options-container input:checked')).map(cb => cb.value)) },
-                career: { active: document.getElementById('career-master-filter').checked, industries: new Set(Array.from(document.querySelectorAll('#industry-options-container .industry-sub-checkbox:checked')).map(cb => cb.value)), military: new Set(Array.from(document.querySelectorAll('#military-options-container input:checked')).map(cb => cb.value)) },
-                location: { active: document.getElementById('location-master-filter').checked, values: new Set(Array.from(document.querySelectorAll('#location-options-container input:checked')).map(cb => cb.value)) }
-            };
+            const activeCriteria = buildActiveFilterCriteria();
+            if (activeCriteria.length === 0) return searchFiltered;
 
             return searchFiltered.filter(alum => {
-                if (activeFilters.classYears.active && activeFilters.classYears.values.size > 0) {
-                    if (!activeFilters.classYears.values.has(alum.classYear || alum.gradYear)) return false;
-                }
-                
-                if (activeFilters.honorees.active) {
-                    const hasAwardsSelected = activeFilters.honorees.awards.size > 0;
-                    const hasLeadershipSelected = activeFilters.honorees.leadership.size > 0;
-                    
-                    if (hasAwardsSelected || hasLeadershipSelected) {
-                        const awardsMatch = hasAwardsSelected && alum.awards.some(award => activeFilters.honorees.awards.has(award));
-                        const leadershipMatch = hasLeadershipSelected && alum.leadershipPositions.some(pos => activeFilters.honorees.leadership.has(pos));
-                        if (!(awardsMatch || leadershipMatch)) return false;
-                    } else {
-                        if (alum.awards.length === 0 && alum.leadershipPositions.length === 0) return false;
-                    }
-                }
-                
-                if (activeFilters.education.active) {
-                    const hasUniSelected = activeFilters.education.universities.size > 0;
-                    const hasMajorSelected = activeFilters.education.majors.size > 0;
-                    const hasDegreeSelected = activeFilters.education.degrees.size > 0;
-                    const hasGreekSelected = activeFilters.education.greek.size > 0;
-                    
-                    if (hasUniSelected || hasMajorSelected || hasDegreeSelected || hasGreekSelected) {
-                        // AND logic across sub-categories within Education
-                        if (hasUniSelected && !alum.universities.some(u => activeFilters.education.universities.has(u))) return false;
-                        if (hasMajorSelected && !alum.majors.some(m => activeFilters.education.majors.has(m))) return false;
-                        if (hasDegreeSelected && !alum.educationHistory.some(edu => edu.degreeLevels.some(level => activeFilters.education.degrees.has(level)))) return false;
-                        if (hasGreekSelected && !activeFilters.education.greek.has(alum.greekAffiliation)) return false;
-                    } else {
-                        if (!alum.hasEducation && !alum.greekAffiliation) return false;
-                    }
-                }
-                
-                if (activeFilters.career.active) {
-                    const hasIndustrySelected = activeFilters.career.industries.size > 0;
-                    const hasMilitarySelected = activeFilters.career.military.size > 0;
-                    
-                    if (hasIndustrySelected || hasMilitarySelected) {
-                        // AND logic across industry and military
-                        if (hasIndustrySelected && !activeFilters.career.industries.has(alum.industry)) return false;
-                        if (hasMilitarySelected && !activeFilters.career.military.has(alum.militaryBranch)) return false;
-                    } else {
-                        if (!alum.industry && !alum.hasMilitaryService) return false;
-                    }
-                }
-                
-                if (activeFilters.location.active) {
-                    if (activeFilters.location.values.size > 0) {
-                        if (!activeFilters.location.values.has(alum.state)) return false;
-                    } else {
-                        if (!alum.state) return false;
-                    }
-                }
-                return true;
+                const matches = activeCriteria.map(criteria => criteria.matches(alum));
+                return currentFilterMode === 'intersection'
+                    ? matches.every(Boolean)
+                    : matches.some(Boolean);
             });
         }
 
@@ -439,7 +667,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             
             profileView.querySelector('.name').textContent = `${alumnus.firstName} ${alumnus.lastName}`;
             profileView.querySelector('.year').textContent = `Class of ${alumnus.gradYear}`;
-            profileView.querySelector('.city').textContent = alumnus.city ? `📍 ${alumnus.city}` : '';
+            const fullCityStr = [alumnus.city, alumnus.state].filter(Boolean).join(', ');
+            profileView.querySelector('.city').textContent = fullCityStr ? `📍 ${fullCityStr}` : '';
 
             const frontImg = imageContainer.querySelector('.front-face');
             const backImg = imageContainer.querySelector('.back-face');
@@ -455,14 +684,16 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             imageContainer.classList.toggle('no-hover', !alumnus.drbPhotoUrl);
 
             profileView.querySelector('#profile-main .name').textContent = `${alumnus.firstName} ${alumnus.lastName}`;
-            profileView.querySelector('#profile-main .year').textContent = `Class of ${alumnus.gradYear}`;
-            profileView.querySelector('#profile-main .city').textContent = alumnus.city || '';
+            const yearEl = profileView.querySelector('#profile-main .year');
+            yearEl.textContent = `Class of ${alumnus.gradYear}`;
+            yearEl.className = `year year-color-${alumnus.gradYear % 4} text-colored`;
+            profileView.querySelector('#profile-main .city').textContent = fullCityStr || '';
 
             const detailsContainer = profileView.querySelector('#profile-details');
             const drbStatsContainer = profileView.querySelector('#profile-drb-stats');
             const contactContainer = profileView.querySelector('#profile-contact-info');
             detailsContainer.innerHTML = '';
-            drbStatsContainer.innerHTML = '';
+            if (drbStatsContainer) drbStatsContainer.innerHTML = '';
             contactContainer.innerHTML = '';
 
             // Add "Edit Profile" button if this is the user's own profile OR if admin
@@ -537,13 +768,13 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             let drbHtml = '';
             if (alumnus.tenure || alumnus.awards.length > 0 || alumnus.favoriteStep || alumnus.leadershipPositions.length > 0) {
-                drbHtml = '<ul class="stats-list">';
+                drbHtml = '<ul>';
                 if (alumnus.tenure) drbHtml += `<li><strong>Tenure:</strong> ${escapeHTML(alumnus.tenure)}-year${alumnus.tenure === '1' ? '' : 's'} member</li>`;
                 if (alumnus.leadershipPositions.length > 0) drbHtml += `<li><strong>Leadership:</strong> ${alumnus.leadershipPositions.map(escapeHTML).join(', ')}</li>`;
                 if (alumnus.awards.length > 0) drbHtml += `<li><strong>Awards:</strong> ${alumnus.awards.map(escapeHTML).join(', ')}</li>`;
                 if (alumnus.favoriteStep) drbHtml += `<li><strong>Favorite Step:</strong> ${escapeHTML(alumnus.favoriteStep)}</li>`;
                 drbHtml += '</ul>';
-                drbStatsContainer.innerHTML = drbHtml;
+                detailsContainer.innerHTML += `<div class="detail-section"><h3>DRB Background</h3>${drbHtml}</div>`;
             }
         }
 
@@ -626,8 +857,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const isFiltered = currentSearchQuery || filteredAlumni.length < allAlumniData.length;
             
             // 1. Interactive Stats
+            const now = new Date();
+            const currentYear = now.getFullYear();
+            let anniversaryDate = new Date(currentYear, 8, 21); // September is month 8 (0-indexed)
+            if (now > anniversaryDate) {
+                anniversaryDate = new Date(currentYear + 1, 8, 21);
+            }
+            const diffDays = Math.ceil(Math.abs(anniversaryDate - now) / (1000 * 60 * 60 * 24));
+            animateCounter('stat-anniversary', diffDays);
+
             const cities = new Set(filteredAlumni.map(a => a.city).filter(Boolean));
-            const industries = new Set(filteredAlumni.map(a => a.occupation).filter(Boolean));
+            const industries = new Set(filteredAlumni.flatMap(a => a.industries).filter(Boolean));
             const classYears = new Set(filteredAlumni.map(a => a.gradYear).filter(Boolean));
             animateCounter('stat-total', filteredAlumni.length);
             animateCounter('stat-cities', cities.size);
@@ -642,7 +882,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 featuredSection.style.display = 'block';
                 const carousel = document.getElementById('featured-carousel');
                 if (carousel) {
-                    const withPhotos = filteredAlumni.filter(a => a.photoUrl);
+                    const withPhotos = filteredAlumni.filter(a => a.hasRealPhoto);
                     const featured = [];
                     const pool = [...withPhotos];
                     for (let i = 0; i < Math.min(3, pool.length); i++) {
@@ -650,16 +890,18 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         featured.push(pool.splice(idx, 1)[0]);
                     }
                     carousel.innerHTML = featured.map(a => {
-                        const hasSwap = !!a.drbPhotoUrl;
+                        const hasSwap = !!(a.rawPhotoUrl && a.drbPhotoUrl);
+                        const featuredFrontImage = a.rawPhotoUrl || a.drbPhotoUrl;
+                        const featuredFrontPos = faceCoords[generateFaceKey(featuredFrontImage)] ? `${faceCoords[generateFaceKey(featuredFrontImage)].x}% ${faceCoords[generateFaceKey(featuredFrontImage)].y}%` : 'top center';
                         return `
                         <a href="#profile=${a.id}" class="featured-card${hasSwap ? '' : ' no-swap'}">
                             <div class="featured-img-wrap">
-                                <img class="front-face" src="${a.photoUrl || generateAvatar(a.firstName, a.lastName, a.gradYear)}" alt="${a.firstName}" style="object-position: ${faceCoords[generateFaceKey(a.photoUrl)] ? `${faceCoords[generateFaceKey(a.photoUrl)].x}% ${faceCoords[generateFaceKey(a.photoUrl)].y}%` : 'top center'}" onerror="this.onerror=null">
+                                <img class="front-face" src="${featuredFrontImage}" alt="${a.firstName}" style="object-position: ${featuredFrontPos}" onerror="this.onerror=null">
                                 ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" style="object-position: ${faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center'}" onerror="this.onerror=null">` : ''}
                             </div>
                             <div class="featured-info">
                                 <h3>${a.firstName} ${a.lastName}</h3>
-                                <p>Class of ${a.gradYear}</p>
+                                <p class="year-color-${a.gradYear % 4} text-colored" style="font-weight: 600;">Class of ${a.gradYear}</p>
                                 ${a.occupation ? `<p class="featured-occ">${a.occupation}</p>` : ''}
                                 ${a.city ? `<p class="featured-city">📍 ${a.city}</p>` : ''}
                             </div>
@@ -672,25 +914,47 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const gridContainer = document.getElementById('dashboard-grid');
             if (gridContainer) {
                 let dashData = [...filteredAlumni];
-                if (currentSort === 'alpha') {
+                if (currentSearchQuery) {
+                    // Intelligent Search relevance sorting
+                    dashData.sort((a, b) => {
+                        const aFirst = (a.firstName || '').toLowerCase();
+                        const aLast = (a.lastName || '').toLowerCase();
+                        const bFirst = (b.firstName || '').toLowerCase();
+                        const bLast = (b.lastName || '').toLowerCase();
+                        
+                        const score = (first, last) => {
+                            if (first === currentSearchQuery || last === currentSearchQuery) return 4; // Exact Match
+                            if (first.startsWith(currentSearchQuery)) return 3; // First Name startsWith
+                            if (last.startsWith(currentSearchQuery)) return 2; // Last Name startsWith
+                            if (first.includes(currentSearchQuery) || last.includes(currentSearchQuery)) return 1; // General Substring
+                            return 0;
+                        };
+                        
+                        const scoreA = score(aFirst, aLast);
+                        const scoreB = score(bFirst, bLast);
+                        if (scoreA !== scoreB) return scoreB - scoreA; // Highest score first
+                        return aFirst.localeCompare(bFirst) || aLast.localeCompare(bLast); // Tie-breaker alpha
+                    });
+                } else if (currentSort === 'alpha') {
                     dashData.sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
                 } else {
-                    dashData.sort((a, b) => (a.gradYear || '').localeCompare(b.gradYear || '') || `${a.firstName}`.localeCompare(`${b.firstName}`));
+                    dashData.sort((a, b) => String(a.gradYear || '').localeCompare(String(b.gradYear || '')) || `${a.firstName}`.localeCompare(`${b.firstName}`));
                 }
 
                 gridContainer.innerHTML = dashData.map(a => {
                     const avatarUrl = a.photoUrl || generateAvatar(a.firstName, a.lastName, a.gradYear);
                     const mainPos = faceCoords[generateFaceKey(a.photoUrl)] ? `${faceCoords[generateFaceKey(a.photoUrl)].x}% ${faceCoords[generateFaceKey(a.photoUrl)].y}%` : 'top center';
                     const drbPos = faceCoords[generateFaceKey(a.drbPhotoUrl)] ? `${faceCoords[generateFaceKey(a.drbPhotoUrl)].x}% ${faceCoords[generateFaceKey(a.drbPhotoUrl)].y}%` : 'top center';
+                    const hasSwap = !!(a.rawPhotoUrl && a.drbPhotoUrl);
                     return `
-                    <a href="#profile=${a.id}" class="grid-card${a.drbPhotoUrl ? '' : ' no-swap'}">
+                    <a href="#profile=${a.id}" class="grid-card${hasSwap ? '' : ' no-swap'}">
                         <div class="grid-card-img">
                             <img class="front-face" src="${avatarUrl}" alt="${a.firstName}" loading="lazy" style="object-position: ${mainPos}" onerror="this.onerror=null">
-                            ${a.drbPhotoUrl ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" style="object-position: ${drbPos}" onerror="this.onerror=null">` : ''}
+                            ${hasSwap ? `<img class="back-face" src="${a.drbPhotoUrl}" alt="${a.firstName} DRB" loading="lazy" style="object-position: ${drbPos}" onerror="this.onerror=null">` : ''}
                         </div>
                         <div class="grid-card-body">
                             <h3>${a.firstName} ${a.lastName}</h3>
-                            <p class="grid-year">Class of ${a.gradYear}</p>
+                            <p class="grid-year year-color-${a.gradYear % 4} text-colored">Class of ${a.gradYear}</p>
                             ${a.city ? `<p class="grid-city">📍 ${a.city}</p>` : ''}
                             ${a.occupation ? `<p class="grid-occ">${a.occupation}</p>` : ''}
                         </div>
@@ -861,6 +1125,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             return null;
         }
 
+        let leafletMarkerCluster = null;
+
         async function renderMapView(filteredAlumni) {
             const container = document.getElementById('map-container');
             if (!container) return;
@@ -875,11 +1141,20 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             }
             leafletMap.invalidateSize();
 
-            // Clear existing markers
-            mapMarkers.forEach(m => leafletMap.removeLayer(m));
-            mapMarkers = [];
+            // Setup or clear marker cluster group
+            if (leafletMarkerCluster) {
+                leafletMarkerCluster.clearLayers();
+            } else {
+                leafletMarkerCluster = L.markerClusterGroup({
+                    maxClusterRadius: 45, // aggressively cluster nearby cities
+                    spiderfyOnMaxZoom: true,
+                    showCoverageOnHover: false,
+                    zoomToBoundsOnClick: true
+                });
+                leafletMap.addLayer(leafletMarkerCluster);
+            }
 
-            // Group alumni by city
+            // Group alumni by city for efficient geocoding
             const cityGroups = {};
             filteredAlumni.forEach(a => {
                 if (!a.city) return;
@@ -888,72 +1163,72 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 cityGroups[cityKey].alumni.push(a);
             });
 
-            // Place markers — use hardcoded coords first, then geocode
             const entries = Object.entries(cityGroups);
             const geocodePromises = [];
 
             for (const [key, group] of entries) {
                 let coords = CITY_COORDS[key];
                 if (coords) {
-                    addMapMarker(coords, group);
+                    addMapMarkersToCluster(coords, group);
                 } else {
-                    // Queue for geocoding
                     geocodePromises.push(
                         geocodeCity(group.name).then(geoCoords => {
-                            if (geoCoords) addMapMarker(geoCoords, group);
+                            if (geoCoords) addMapMarkersToCluster(geoCoords, group);
                         })
                     );
                 }
             }
 
-            // Wait for all geocoding to complete
             if (geocodePromises.length > 0) {
                 await Promise.allSettled(geocodePromises);
             }
 
-            // Add a summary control
-            updateMapSummary();
+            updateMapSummary(filteredAlumni);
         }
 
-        function addMapMarker(coords, group) {
-            const count = group.alumni.length;
-            const radius = Math.min(8 + count * 2.5, 28);
-
-            const marker = L.circleMarker(coords, {
-                radius: radius,
-                fillColor: '#7BAFD4',
-                color: 'rgba(123, 175, 212, 0.4)',
-                weight: 2,
-                fillOpacity: 0.85
-            }).addTo(leafletMap);
-
-            // Add count label for groups > 1
-            if (count > 1) {
-                const label = L.marker(coords, {
-                    icon: L.divIcon({
-                        className: 'map-count-label',
-                        html: `<span>${count}</span>`,
-                        iconSize: [24, 24],
-                        iconAnchor: [12, 12]
-                    })
-                }).addTo(leafletMap);
-                mapMarkers.push(label);
-            }
-
-            const names = group.alumni.map(a => `<a href="#profile=${a.id}" style="color:#7BAFD4;text-decoration:none;">${a.firstName} ${a.lastName}</a>`).join('<br>');
-            marker.bindPopup(`<div style="font-family:Inter,sans-serif;"><strong style="font-size:1.05em;">${group.name}</strong> <span style="color:#6c757d;">(${count})</span><br><div style="margin-top:6px;line-height:1.6;">${names}</div></div>`, { maxWidth: 250 });
-            mapMarkers.push(marker);
+        function addMapMarkersToCluster(coords, group) {
+            // Spawn 1 individual marker per human so cluster math works perfectly
+            group.alumni.forEach(a => {
+                const marker = L.circleMarker(coords, {
+                    radius: 8,
+                    fillColor: '#7BAFD4',
+                    color: '#ffffff',
+                    weight: 1.5,
+                    fillOpacity: 0.9
+                });
+                
+                const avatar = a.photoUrl || generateAvatar(a.firstName, a.lastName, a.gradYear);
+                const popupHtml = `
+                    <div style="font-family:Inter,sans-serif; text-align:center;">
+                        <img src="${avatar}" style="width:48px; height:48px; border-radius:50%; object-fit:cover; margin-bottom:8px;">
+                        <br>
+                        <a href="#profile=${a.id}" style="color:#7BAFD4; text-decoration:none; font-weight:bold; font-size:1.1em;">${a.firstName} ${a.lastName}</a>
+                        <div style="color:#6c757d; font-size:0.9em; margin-top:2px;">${a.occupation || 'Class of ' + a.gradYear}</div>
+                        <div style="color:#6c757d; font-size:0.85em;">📍 ${a.city}</div>
+                    </div>
+                `;
+                marker.bindPopup(popupHtml, { maxWidth: 250, minWidth: 150 });
+                leafletMarkerCluster.addLayer(marker);
+            });
         }
 
-        function updateMapSummary() {
+        function updateMapSummary(filteredAlumni) {
             const existing = document.querySelector('.map-summary');
             if (existing) existing.remove();
 
-            const total = mapMarkers.filter(m => m instanceof L.CircleMarker).length;
-            const totalAlumni = allAlumniData.filter(a => a.city).length;
+            // Calculate distinct cities by grouping them uniquely
+            const mappedCities = new Set();
+            let totalAlumni = 0;
+            filteredAlumni.forEach(a => {
+                if (a.city) {
+                    mappedCities.add(a.city.toLowerCase().replace(/,\s*(\w{2})$/i, '').replace(/,.*$/, '').trim());
+                    totalAlumni++;
+                }
+            });
+
             const summaryDiv = document.createElement('div');
             summaryDiv.className = 'map-summary';
-            summaryDiv.innerHTML = `<span>${total} cities</span> · <span>${totalAlumni} alumni mapped</span>`;
+            summaryDiv.innerHTML = `<span>${mappedCities.size} cities</span> · <span>${totalAlumni} alumni mapped</span>`;
             document.getElementById('map-view').appendChild(summaryDiv);
         }
 
@@ -992,64 +1267,167 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 const categoryDiv = document.createElement('div');
                 categoryDiv.className = `${itemType}-category-group`;
 
-                if (itemsByCategory[category].length === 1) {
-                    // If there's only one item in the category, render a single, direct checkbox.
-                    const item = itemsByCategory[category][0];
-                    const subCheckboxId = `${itemType}-single-${item.replace(/\W/g, '-')}`;
-                    categoryDiv.innerHTML = `
-                        <div class="sub-filter-group">
-                            <input type="checkbox" id="${subCheckboxId}" value="${item}" class="${itemType}-sub-checkbox">
-                            <label for="${subCheckboxId}">${category}</label>
-                        </div>`;
-                    container.appendChild(categoryDiv);
-                    categoryDiv.querySelector('input').addEventListener('change', renderProfiles);
-                } else {
-                    // Otherwise, render the expandable category with multiple sub-options.
-                    const masterCheckboxId = `${itemType}-category-${category.replace(/\W/g, '-')}`;
-                    categoryDiv.innerHTML = `
-                        <div class="sub-filter-group master-${itemType}">
-                            <input type="checkbox" id="${masterCheckboxId}">
-                            <label for="${masterCheckboxId}">${category}</label>
-                        </div>
+                const masterCheckboxId = `${itemType}-category-${category.replace(/\W/g, '-')}`;
+                categoryDiv.innerHTML = `
+                    <label class="sub-filter-group master-${itemType} master-filter-control" for="${masterCheckboxId}" style="display:flex; width:100%; margin:0; cursor:pointer; font-weight:600;">
+                        <input type="checkbox" id="${masterCheckboxId}">
+                        <span class="custom-checkbox"></span>
+                        <span class="filter-label-text">${category}</span>
+                    </label>
+                `;
+                
+                const subOptionsContainer = document.createElement('div');
+                subOptionsContainer.className = `${itemType}-sub-options`;
+                
+                itemsByCategory[category].sort().forEach(item => {
+                    const subCheckboxId = `${itemType}-${item.replace(/\W/g, '-')}`;
+                    const subLabel = document.createElement('label');
+                    subLabel.className = 'sub-filter-group master-filter-control';
+                    subLabel.htmlFor = subCheckboxId;
+                    subLabel.style.cssText = 'display:flex; width:100%; margin:0; cursor:pointer; font-weight:400; font-size:0.85em; color:var(--text-secondary);';
+                    subLabel.innerHTML = `
+                        <input type="checkbox" id="${subCheckboxId}" value="${item}" class="${itemType}-sub-checkbox">
+                        <span class="custom-checkbox"></span>
+                        <span class="filter-label-text">${item}</span>
                     `;
-                    
-                    const subOptionsContainer = document.createElement('div');
-                    subOptionsContainer.className = `${itemType}-sub-options`;
-                    
-                    itemsByCategory[category].sort().forEach(item => {
-                        const subCheckboxId = `${itemType}-${item.replace(/\W/g, '-')}`;
-                        const subDiv = document.createElement('div');
-                        subDiv.className = 'sub-filter-group';
-                        subDiv.innerHTML = `
-                            <input type="checkbox" id="${subCheckboxId}" value="${item}" class="${itemType}-sub-checkbox">
-                            <label for="${subCheckboxId}">${item}</label>
-                        `;
-                        subOptionsContainer.appendChild(subDiv);
-                    });
+                    subOptionsContainer.appendChild(subLabel);
+                });
 
-                    categoryDiv.appendChild(subOptionsContainer);
-                    container.appendChild(categoryDiv);
+                categoryDiv.appendChild(subOptionsContainer);
+                container.appendChild(categoryDiv);
 
-                    const masterCheckbox = categoryDiv.querySelector(`#${masterCheckboxId}`);
-                    const subCheckboxes = Array.from(categoryDiv.querySelectorAll(`.${itemType}-sub-checkbox`));
+                const masterCheckbox = categoryDiv.querySelector(`#${masterCheckboxId}`);
+                const subCheckboxes = Array.from(categoryDiv.querySelectorAll(`.${itemType}-sub-checkbox`));
 
-                    masterCheckbox.addEventListener('change', () => {
-                        subCheckboxes.forEach(sub => sub.checked = masterCheckbox.checked);
+                masterCheckbox.addEventListener('change', () => {
+                    subCheckboxes.forEach(sub => sub.checked = masterCheckbox.checked);
+                    syncFilterHierarchy(itemType);
+                    renderProfiles();
+                });
+
+                subCheckboxes.forEach(sub => {
+                    sub.addEventListener('change', () => {
+                        masterCheckbox.checked = subCheckboxes.every(s => s.checked);
+                        masterCheckbox.indeterminate = !masterCheckbox.checked && subCheckboxes.some(s => s.checked);
+                        syncFilterHierarchy(itemType);
                         renderProfiles();
                     });
-
-                    subCheckboxes.forEach(sub => {
-                        sub.addEventListener('change', () => {
-                            masterCheckbox.checked = subCheckboxes.every(s => s.checked);
-                            masterCheckbox.indeterminate = !masterCheckbox.checked && subCheckboxes.some(s => s.checked);
-                            renderProfiles();
-                        });
-                    });
-                }
+                });
             });
         }
 
+        function syncFilterHierarchy(itemType) {
+            const mappings = {
+                'university': {
+                    subMaster: 'university-sub-filter',
+                    subSelectors: ['#university-options-container input:checked'],
+                    rootMaster: 'education-master-filter',
+                    rootSelectors: [
+                        '#university-options-container input:checked',
+                        '#major-options-container input:checked',
+                        '#degree-options-container input:checked',
+                        '#greek-options-container input:checked'
+                    ]
+                },
+                'major': {
+                    subMaster: 'major-sub-filter',
+                    subSelectors: ['#major-options-container input:checked'],
+                    rootMaster: 'education-master-filter',
+                    rootSelectors: [
+                        '#university-options-container input:checked',
+                        '#major-options-container input:checked',
+                        '#degree-options-container input:checked',
+                        '#greek-options-container input:checked'
+                    ]
+                },
+                'degree': {
+                    subMaster: 'degree-sub-filter',
+                    subSelectors: ['#degree-options-container input:checked'],
+                    rootMaster: 'education-master-filter',
+                    rootSelectors: [
+                        '#university-options-container input:checked',
+                        '#major-options-container input:checked',
+                        '#degree-options-container input:checked',
+                        '#greek-options-container input:checked'
+                    ]
+                },
+                'greek': {
+                    subMaster: 'greek-sub-filter',
+                    subSelectors: ['#greek-options-container input:checked'],
+                    rootMaster: 'education-master-filter',
+                    rootSelectors: [
+                        '#university-options-container input:checked',
+                        '#major-options-container input:checked',
+                        '#degree-options-container input:checked',
+                        '#greek-options-container input:checked'
+                    ]
+                },
+                'drb-awards': {
+                    subMaster: 'drb-awards-sub-filter',
+                    subSelectors: ['#drb-awards-options-container input:checked'],
+                    rootMaster: 'honorees-master-filter',
+                    rootSelectors: [
+                        '#drb-awards-options-container input:checked',
+                        '#drb-leadership-options-container input:checked'
+                    ]
+                },
+                'drb-leadership': {
+                    subMaster: 'drb-leadership-sub-filter',
+                    subSelectors: ['#drb-leadership-options-container input:checked'],
+                    rootMaster: 'honorees-master-filter',
+                    rootSelectors: [
+                        '#drb-awards-options-container input:checked',
+                        '#drb-leadership-options-container input:checked'
+                    ]
+                },
+                'industry': {
+                    subMaster: 'industry-sub-filter',
+                    subSelectors: ['#industry-options-container input:checked'],
+                    rootMaster: 'career-master-filter',
+                    rootSelectors: [
+                        '#industry-options-container input:checked',
+                        '#military-options-container input:checked'
+                    ]
+                },
+                'military': {
+                    subMaster: 'military-sub-filter',
+                    subSelectors: ['#military-options-container input:checked'],
+                    rootMaster: 'career-master-filter',
+                    rootSelectors: [
+                        '#industry-options-container input:checked',
+                        '#military-options-container input:checked'
+                    ]
+                },
+                'class-year': {
+                    rootMaster: 'class-year-master-filter',
+                    rootSelectors: ['#class-year-options-container input:checked']
+                },
+                'location': {
+                    rootMaster: 'location-master-filter',
+                    rootSelectors: ['#location-options-container input:checked']
+                }
+            };
+
+            const config = mappings[itemType];
+            if (!config) return;
+
+            if (config.subMaster) {
+                const subMasterCheckbox = document.getElementById(config.subMaster);
+                if (subMasterCheckbox) {
+                    subMasterCheckbox.checked = config.subSelectors.some(selector => document.querySelector(selector));
+                }
+            }
+
+            if (config.rootMaster) {
+                const rootMasterCheckbox = document.getElementById(config.rootMaster);
+                if (rootMasterCheckbox) {
+                    rootMasterCheckbox.checked = config.rootSelectors.some(selector => document.querySelector(selector));
+                }
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', function() {
+            const supabase = window.supabaseClient;
             const loginBtn = document.getElementById('login-btn');
             const loginEmailInput = document.getElementById('login-email');
             const loginMessage = document.getElementById('login-message');
@@ -1064,12 +1442,610 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const resendBtn = document.getElementById('resend-btn');
             const searchInput = document.getElementById('search-input');
             const resetFiltersBtn = document.getElementById('reset-filters-btn');
+            const filterModeUnionBtn = document.getElementById('filter-mode-union-btn');
+            const filterModeIntersectionBtn = document.getElementById('filter-mode-intersection-btn');
+            const requestAccessBtn = document.getElementById('request-access-btn');
+            const requestAccessNote = document.querySelector('.request-access-note');
+            const requestAccessModal = document.getElementById('request-access-modal-overlay');
+            const requestAccessForm = document.getElementById('request-access-form');
+            const requestAccessMessage = document.getElementById('request-access-message');
+            const requestAccessSubmitBtn = document.getElementById('request-access-submit-btn');
+            const requestAccessCloseBtn = document.getElementById('request-access-close-btn');
+            const requestAccessCancelBtn = document.getElementById('request-access-cancel-btn');
+            const requestEmailInput = document.getElementById('request-email');
+            const requestStateSelect = document.getElementById('request-state');
+            const requestMilitaryBranchSelect = document.getElementById('request-military-branch');
+            const requestGreekSelect = document.getElementById('request-greek');
+            const addEducationEntryBtn = document.getElementById('add-education-entry-btn');
+            const requestEducationEntries = document.getElementById('request-education-entries');
+            const requestEducationEntryTemplate = document.getElementById('request-education-entry-template');
+            const requestUniversityOptions = document.getElementById('request-university-options');
+            const requestMajorOptions = document.getElementById('request-major-options');
+            const requestDegreeOptions = document.getElementById('request-degree-options');
+            const requestOccupationOptions = document.getElementById('request-occupation-options');
+            const requestPhotoCurrentInput = document.getElementById('request-photo-current');
+            const requestPhotoDrbInput = document.getElementById('request-photo-drb');
+            const requestPhotoCurrentPreview = document.getElementById('request-photo-current-preview');
+            const requestPhotoDrbPreview = document.getElementById('request-photo-drb-preview');
+            const defaultRequestAccessNoteText = requestAccessNote ? requestAccessNote.textContent : '';
+            const requestShareNone = document.getElementById('request-share-none');
+            const requestShareEmail = document.getElementById('request-share-email');
+            const requestSharePhone = document.getElementById('request-share-phone');
+            const requestShareSocial = document.getElementById('request-share-social');
+            const populatePublicDatalists = async () => {
+                try {
+                    const [{ data: education }, { data: majorsData }] = await Promise.all([
+                        supabase.from('alumni_education').select('university, degree'),
+                        supabase.from('education_majors').select('major_name')
+                    ]);
 
-            if (typeof supabase === 'undefined' || !supabase?.auth) {
+                    const occupations = new Set([
+                        'Accounting', 'Arts & Design', 'Business Development', 'Consulting',
+                        'Data Science', 'Education', 'Engineering', 'Entrepreneurship / Founder',
+                        'Finance', 'Government & Public Administration', 'Healthcare',
+                        'Human Resources', 'Information Technology', 'Legal', 'Marketing',
+                        'Media & Communications', 'Non-Profit', 'Operations',
+                        'Product Management', 'Real Estate', 'Research', 'Sales',
+                        'Software Engineering', 'Venture Capital & Private Equity'
+                    ]);
+                    const universities = new Set();
+                    const degrees = new Set();
+                    const majors = new Set();
+
+                    (education || []).forEach(row => {
+                        if (row.university) row.university.split('\n').map(s => s.trim()).filter(Boolean).forEach(s => universities.add(s));
+                        if (row.degree) row.degree.split('\n').map(s => s.trim()).filter(Boolean).forEach(s => degrees.add(s));
+                    });
+
+                    (majorsData || []).forEach(row => {
+                        if (row.major_name) row.major_name.split('\n').map(s => s.trim()).filter(Boolean).forEach(s => majors.add(s));
+                    });
+
+                    const populate = (element, items) => {
+                        if (element) {
+                            element.innerHTML = Array.from(items).sort().map(item => `<option value="${item}">`).join('');
+                        }
+                    };
+
+                    populate(requestOccupationOptions, occupations);
+                    populate(requestUniversityOptions, universities);
+                    populate(requestDegreeOptions, degrees);
+                    populate(requestMajorOptions, majors);
+                } catch (e) {
+                    console.error('Error prefetching datalist data:', e);
+                }
+            };
+            populatePublicDatalists();
+
+            const setRequestAccessMessage = (message = '', type = '') => {
+                if (!requestAccessMessage) return;
+                requestAccessMessage.textContent = message;
+                requestAccessMessage.className = 'edit-message';
+                if (type) requestAccessMessage.classList.add(type);
+            };
+
+            const openRequestAccessModal = () => {
+                if (!requestAccessModal) return;
+                
+                requestAccessForm?.reset();
+                if (typeof resetEducationEntries === 'function') resetEducationEntries();
+                if (typeof resetRequestLinkEntries === 'function') resetRequestLinkEntries();
+                
+                const requestLocationField = document.getElementById('request-location');
+                if (requestLocationField && typeof setupLocationAutocomplete === 'function') {
+                    setupLocationAutocomplete(requestLocationField, document.getElementById('request-location-results'));
+                }
+                
+                if (typeof clearRequestUploadPreview === 'function') {
+                    clearRequestUploadPreview(document.getElementById('request-photo-current-preview'));
+                    clearRequestUploadPreview(document.getElementById('request-photo-drb-preview'));
+                }
+
+                setRequestAccessMessage('');
+                requestAccessModal.style.display = 'flex';
+                document.body.style.overflow = 'hidden';
+            };
+
+            const openRequestAccessFromLogin = emailValue => {
+                if (requestEmailInput && !requestEmailInput.value.trim() && emailValue) {
+                    requestEmailInput.value = String(emailValue).trim().toLowerCase();
+                }
+                openRequestAccessModal();
+            };
+
+            const closeRequestAccessModal = () => {
+                if (!requestAccessModal) return;
+                requestAccessModal.style.display = 'none';
+                document.body.style.overflow = '';
+            };
+
+            const getRequestFieldValue = (formData, fieldName) => String(formData.get(fieldName) || '')
+                .replace(/\r\n/g, '\n')
+                .replace(/[\u2018\u2019]/g, "'")
+                .replace(/[\u201C\u201D]/g, '"')
+                .replace(/[\u2013\u2014]/g, '-')
+                .split('\n')
+                .map(line => line.replace(/\s+/g, ' ').trim())
+                .filter((line, index, lines) => line || (index > 0 && lines[index - 1]))
+                .join('\n')
+                .trim();
+
+            const formatRequestFileSize = bytes => {
+                if (!bytes) return '0 KB';
+                if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+                return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+            };
+
+            const getCheckedRequestValues = name =>
+                Array.from(requestAccessForm?.querySelectorAll(`input[name="${name}"]:checked`) || [])
+                    .map(input => canonicalizeText(input.value))
+                    .filter(Boolean);
+
+            const populateRequestDatalist = (datalist, options) => {
+                if (!datalist) return;
+                datalist.innerHTML = '';
+                options.forEach(optionValue => {
+                    const option = document.createElement('option');
+                    option.value = optionValue;
+                    datalist.appendChild(option);
+                });
+            };
+
+            const populateRequestSelect = (select, options, placeholder) => {
+                if (!select) return;
+                select.innerHTML = '';
+                const placeholderOption = document.createElement('option');
+                placeholderOption.value = '';
+                placeholderOption.textContent = placeholder;
+                select.appendChild(placeholderOption);
+
+                options.forEach(optionValue => {
+                    const option = document.createElement('option');
+                    option.value = optionValue;
+                    option.textContent = optionValue;
+                    select.appendChild(option);
+                });
+            };
+
+            const updateEducationEntryControls = () => {
+                if (!requestEducationEntries) return;
+                const entries = Array.from(requestEducationEntries.querySelectorAll('.request-education-entry'));
+                entries.forEach((entry, index) => {
+                    const title = entry.querySelector('.request-entry-title');
+                    const removeBtn = entry.querySelector('.request-entry-remove');
+                    if (title) title.textContent = `School ${index + 1}`;
+                    if (removeBtn) removeBtn.disabled = entries.length === 1;
+                });
+            };
+
+            const addEducationEntry = (values = {}) => {
+                if (!requestEducationEntries || !requestEducationEntryTemplate) return;
+                const fragment = requestEducationEntryTemplate.content.cloneNode(true);
+                const entry = fragment.querySelector('.request-education-entry');
+                
+                const uniInput = entry.querySelector('.request-education-university');
+                uniInput.value = values.university || '';
+                
+                // Wire up university auto-suggest for Request Form
+                const uniSuggestions = entry.querySelector('.request-uni-suggestions');
+                let uniDebounce = null;
+                uniInput.addEventListener('input', () => {
+                    clearTimeout(uniDebounce);
+                    const q = uniInput.value.trim();
+                    if (q.length < 2) { uniSuggestions.innerHTML = ''; return; }
+                    uniDebounce = setTimeout(async () => {
+                        try {
+                            const res = await fetch(`https://universities.hipolabs.com/search?name=${encodeURIComponent(q)}&country=United+States&limit=8`);
+                            const results = await res.json();
+                            uniSuggestions.innerHTML = '';
+                            const seen = new Set();
+                            results.slice(0, 8).forEach(u => {
+                                const name = u.name;
+                                if (!name || seen.has(name)) return;
+                                seen.add(name);
+                                const li = document.createElement('li');
+                                li.textContent = name;
+                                li.addEventListener('click', () => {
+                                    uniInput.value = name;
+                                    uniSuggestions.innerHTML = '';
+                                });
+                                uniSuggestions.appendChild(li);
+                            });
+                        } catch (err) { console.warn('University search error:', err); }
+                    }, 300);
+                });
+                document.addEventListener('click', (e) => {
+                    if (!uniInput.contains(e.target) && !uniSuggestions.contains(e.target)) {
+                        uniSuggestions.innerHTML = '';
+                    }
+                });
+
+                entry.querySelector('.request-education-major').value = values.major || '';
+                entry.querySelector('.request-education-degree').value = values.degree || '';
+                entry.querySelector('.request-education-grad-year').value = values.gradYear || '';
+                entry.querySelector('.request-entry-remove').addEventListener('click', () => {
+                    entry.remove();
+                    updateEducationEntryControls();
+                });
+                requestEducationEntries.appendChild(fragment);
+                updateEducationEntryControls();
+            };
+
+            const resetEducationEntries = () => {
+                if (!requestEducationEntries) return;
+                requestEducationEntries.innerHTML = '';
+                addEducationEntry();
+            };
+
+            const serializeEducationEntries = () => {
+                if (!requestEducationEntries) {
+                    return {
+                        education_university: '',
+                        education_major: '',
+                        education_degree: '',
+                        education_grad_year: ''
+                    };
+                }
+
+                const entries = Array.from(requestEducationEntries.querySelectorAll('.request-education-entry'))
+                    .map(entry => ({
+                        university: canonicalizeText(entry.querySelector('.request-education-university')?.value || ''),
+                        major: canonicalizeText(entry.querySelector('.request-education-major')?.value || ''),
+                        degree: canonicalizeText(entry.querySelector('.request-education-degree')?.value || ''),
+                        gradYear: canonicalizeText(entry.querySelector('.request-education-grad-year')?.value || '')
+                    }))
+                    .filter(entry => entry.university || entry.major || entry.degree || entry.gradYear);
+
+                return {
+                    education_university: entries.map(entry => entry.university).join('\n'),
+                    education_major: entries.map(entry => entry.major).join('\n'),
+                    education_degree: entries.map(entry => entry.degree).join('\n'),
+                    education_grad_year: entries.map(entry => entry.gradYear).join('\n')
+                };
+            };
+
+            const clearRequestUploadPreview = previewEl => {
+                if (!previewEl) return;
+                if (previewEl.dataset.objectUrl) {
+                    URL.revokeObjectURL(previewEl.dataset.objectUrl);
+                    delete previewEl.dataset.objectUrl;
+                }
+                previewEl.hidden = true;
+                const image = previewEl.querySelector('img');
+                const name = previewEl.querySelector('.request-upload-name');
+                const size = previewEl.querySelector('.request-upload-size');
+                if (image) image.src = '';
+                if (name) name.textContent = '';
+                if (size) size.textContent = '';
+            };
+
+            const updateRequestUploadPreview = (fileInput, previewEl) => {
+                if (!previewEl) return;
+                clearRequestUploadPreview(previewEl);
+                const file = fileInput?.files?.[0];
+                if (!file) return;
+
+                const objectUrl = URL.createObjectURL(file);
+                previewEl.dataset.objectUrl = objectUrl;
+                const image = previewEl.querySelector('img');
+                const name = previewEl.querySelector('.request-upload-name');
+                const size = previewEl.querySelector('.request-upload-size');
+                if (image) image.src = objectUrl;
+                if (name) name.textContent = file.name;
+                if (size) size.textContent = formatRequestFileSize(file.size);
+                previewEl.hidden = false;
+            };
+
+            const requestLinksEntries = document.getElementById('request-links-entries');
+            const requestLinkEntryTemplate = document.getElementById('request-link-entry-template');
+
+            const addRequestLinkEntry = (values = {}) => {
+                if (!requestLinksEntries || !requestLinkEntryTemplate) return;
+                const fragment = requestLinkEntryTemplate.content.cloneNode(true);
+                const entry = fragment.querySelector('.request-link-entry');
+                entry.querySelector('.request-link-platform').value = values.platform || 'LinkedIn';
+                entry.querySelector('.request-link-url').value = values.url || '';
+                entry.querySelector('.request-link-remove').addEventListener('click', () => {
+                    entry.remove();
+                });
+                requestLinksEntries.appendChild(fragment);
+            };
+
+            const resetRequestLinkEntries = () => {
+                if (!requestLinksEntries) return;
+                requestLinksEntries.innerHTML = '';
+                addRequestLinkEntry(); // Add one default blank row
+            };
+
+            const serializeRequestLinkEntries = () => {
+                if (!requestLinksEntries) return { social_media: '' };
+
+                const entries = Array.from(requestLinksEntries.querySelectorAll('.request-link-entry'))
+                    .map(entry => ({
+                        platform: canonicalizeText(entry.querySelector('.request-link-platform')?.value || ''),
+                        url: (entry.querySelector('.request-link-url')?.value || '').trim()
+                    }))
+                    .filter(entry => entry.url);
+
+                return {
+                    social_media: entries.map(e => `${e.platform}: ${e.url}`).join(' | ')
+                };
+            };
+
+            document.getElementById('add-request-link-btn')?.addEventListener('click', () => addRequestLinkEntry());
+
+            const loadImageFile = file => new Promise((resolve, reject) => {
+                const objectUrl = URL.createObjectURL(file);
+                const image = new Image();
+                image.onload = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    resolve(image);
+                };
+                image.onerror = () => {
+                    URL.revokeObjectURL(objectUrl);
+                    reject(new Error(`Could not read ${file.name} as an image.`));
+                };
+                image.src = objectUrl;
+            });
+
+            const canvasToBlob = (canvas, type, quality) => new Promise((resolve, reject) => {
+                canvas.toBlob(blob => {
+                    if (!blob) {
+                        reject(new Error('Image compression failed.'));
+                        return;
+                    }
+                    resolve(blob);
+                }, type, quality);
+            });
+
+            const blobToBase64 = blob => new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    const result = String(reader.result || '');
+                    resolve(result.includes(',') ? result.split(',')[1] : result);
+                };
+                reader.onerror = () => reject(new Error('Image encoding failed.'));
+                reader.readAsDataURL(blob);
+            });
+
+            const sanitizeAttachmentName = (fileName, fallbackBase) => {
+                const base = (fileName || fallbackBase || 'photo')
+                    .replace(/\.[^.]+$/, '')
+                    .replace(/[^a-z0-9-_]+/gi, '-')
+                    .replace(/-+/g, '-')
+                    .replace(/^-|-$/g, '')
+                    .toLowerCase();
+                return `${base || fallbackBase || 'photo'}.jpg`;
+            };
+
+            const buildRequestImageAttachment = async (fileInput, role, fallbackName) => {
+                const file = fileInput?.files?.[0];
+                if (!file) return null;
+                if (!file.type || !file.type.startsWith('image/')) {
+                    throw new Error(`${role} must be an image file.`);
+                }
+
+                // 4MB strict limit for raw uploads to prevent Apps Script payload crashes
+                const maxAttachmentBytes = 4 * 1024 * 1024;
+                if (file.size > maxAttachmentBytes) {
+                    const sizeMb = (file.size / 1024 / 1024).toFixed(1);
+                    throw new Error(`${role} is too large (${sizeMb}MB). Please select a photo under 4MB.`);
+                }
+
+                return {
+                    role,
+                    name: sanitizeAttachmentName(file.name, fallbackName),
+                    mimeType: file.type,
+                    data: await blobToBase64(file)
+                };
+            };
+
+            const resetRequestAccessFormState = () => {
+                if (requestAccessForm) requestAccessForm.reset();
+                if (requestAccessNote) requestAccessNote.textContent = defaultRequestAccessNoteText;
+                clearRequestUploadPreview(requestPhotoCurrentPreview);
+                clearRequestUploadPreview(requestPhotoDrbPreview);
+                resetEducationEntries();
+                if (requestStateSelect) requestStateSelect.value = '';
+                if (requestMilitaryBranchSelect) requestMilitaryBranchSelect.value = '';
+                if (requestGreekSelect) requestGreekSelect.value = '';
+            };
+
+            const syncRequestShareControls = changedCheckbox => {
+                if (!changedCheckbox) return;
+                if (changedCheckbox === requestShareNone && requestShareNone.checked) {
+                    [requestShareEmail, requestSharePhone, requestShareSocial].forEach(checkbox => {
+                        if (checkbox) checkbox.checked = false;
+                    });
+                    return;
+                }
+
+                if (changedCheckbox !== requestShareNone && changedCheckbox.checked && requestShareNone) {
+                    requestShareNone.checked = false;
+                }
+            };
+
+            populateRequestSelect(requestStateSelect, REQUEST_STATE_OPTIONS, 'Select a state');
+
+
+            populateRequestSelect(requestMilitaryBranchSelect, REQUEST_MILITARY_BRANCH_OPTIONS, 'Select a branch');
+            populateRequestSelect(requestGreekSelect, REQUEST_GREEK_OPTIONS, 'Select an affiliation');
+            populateRequestDatalist(requestUniversityOptions, REQUEST_UNIVERSITY_OPTIONS);
+            populateRequestDatalist(requestMajorOptions, REQUEST_MAJOR_OPTIONS);
+            populateRequestDatalist(requestDegreeOptions, REQUEST_DEGREE_OPTIONS);
+            populateRequestDatalist(requestOccupationOptions, REQUEST_OCCUPATION_OPTIONS);
+            resetEducationEntries();
+
+            if (addEducationEntryBtn) {
+                addEducationEntryBtn.addEventListener('click', () => addEducationEntry());
+            }
+
+            if (requestPhotoCurrentInput) {
+                requestPhotoCurrentInput.addEventListener('change', () => updateRequestUploadPreview(requestPhotoCurrentInput, requestPhotoCurrentPreview));
+            }
+
+            if (requestPhotoDrbInput) {
+                requestPhotoDrbInput.addEventListener('change', () => updateRequestUploadPreview(requestPhotoDrbInput, requestPhotoDrbPreview));
+            }
+
+            [requestShareEmail, requestSharePhone, requestShareSocial, requestShareNone].forEach(checkbox => {
+                checkbox?.addEventListener('change', () => syncRequestShareControls(checkbox));
+            });
+
+            if (requestAccessBtn) {
+                requestAccessBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    openRequestAccessModal();
+                });
+            }
+
+            if (requestAccessCloseBtn) {
+                requestAccessCloseBtn.addEventListener('click', closeRequestAccessModal);
+            }
+
+            if (requestAccessCancelBtn) {
+                requestAccessCancelBtn.addEventListener('click', closeRequestAccessModal);
+            }
+
+            // Click-outside-to-close behavior removed per user feedback
+            // if (requestAccessModal) {
+            //     requestAccessModal.addEventListener('click', (event) => {
+            //         if (event.target === requestAccessModal) closeRequestAccessModal();
+            //     });
+            // }
+
+            if (requestAccessForm) {
+                requestAccessForm.addEventListener('submit', async (event) => {
+                    event.preventDefault();
+                    if (!requestAccessForm.reportValidity()) return;
+
+                    const formData = new FormData(requestAccessForm);
+                    const educationPayload = serializeEducationEntries();
+                    const leadership = [
+                        ...getCheckedRequestValues('leadership_option'),
+                        canonicalizeText(formData.get('leadership_other') || '')
+                    ].filter(Boolean).join('\n');
+                    const awards = [
+                        ...getCheckedRequestValues('award_option'),
+                        canonicalizeText(formData.get('awards_other') || '')
+                    ].filter(Boolean).join('\n');
+                    const locParts = (formData.get('location') || '').split(',').map(s => s.trim());
+                    const reqCity = locParts.length > 0 ? (locParts.length > 1 ? locParts.slice(0, -1).join(', ') : locParts[0]) : '';
+                    const reqState = locParts.length > 1 ? locParts[locParts.length - 1] : '';
+
+                    const linkPayload = serializeRequestLinkEntries();
+
+                    const payload = {
+                        first_name: getRequestFieldValue(formData, 'first_name'),
+                        last_name: getRequestFieldValue(formData, 'last_name'),
+                        grad_year: getRequestFieldValue(formData, 'grad_year'),
+                        email: getRequestFieldValue(formData, 'email').toLowerCase(),
+                        phone: getRequestFieldValue(formData, 'phone'),
+                        city: reqCity,
+                        state: reqState,
+                        occupation: getRequestFieldValue(formData, 'occupation'),
+                        education_university: educationPayload.education_university,
+                        education_major: educationPayload.education_major,
+                        education_degree: educationPayload.education_degree,
+                        education_grad_year: educationPayload.education_grad_year,
+                        greek_affiliation: getRequestFieldValue(formData, 'greek_affiliation'),
+                        tenure: getRequestFieldValue(formData, 'tenure'),
+                        leadership,
+                        awards,
+                        favorite_step: getRequestFieldValue(formData, 'favorite_step'),
+                        military_branch: getRequestFieldValue(formData, 'military_branch'),
+                        military_rank: getRequestFieldValue(formData, 'military_rank'),
+                        about: getRequestFieldValue(formData, 'about'),
+                        instagram: getRequestFieldValue(formData, 'instagram'),
+                        social_media: linkPayload.social_media,
+                        websites: '',
+                        contact_for_events: canonicalizeText(formData.get('contact_for_events') || ''),
+                        share_email: !!requestAccessForm.elements.share_email.checked && !requestAccessForm.elements.share_none.checked,
+                        share_phone: !!requestAccessForm.elements.share_phone.checked && !requestAccessForm.elements.share_none.checked,
+                        share_social: !!requestAccessForm.elements.share_social.checked && !requestAccessForm.elements.share_none.checked,
+                        review_notes: getRequestFieldValue(formData, 'review_notes'),
+                        source_url: window.location.href,
+                        submitted_at: new Date().toISOString()
+                    };
+
+                    try {
+                        if (requestAccessSubmitBtn) {
+                            requestAccessSubmitBtn.disabled = true;
+                            requestAccessSubmitBtn.textContent = 'Preparing...';
+                        }
+                        setRequestAccessMessage('Preparing your request and attachments...');
+
+                        const attachments = (await Promise.all([
+                            buildRequestImageAttachment(requestPhotoCurrentInput, 'Current Photo', 'current-photo'),
+                            buildRequestImageAttachment(requestPhotoDrbInput, 'DRB Photo', 'drb-photo')
+                        ])).filter(Boolean);
+
+                        payload.current_photo_filename = attachments.find(attachment => attachment.role === 'Current Photo')?.name || '';
+                        payload.drb_photo_filename = attachments.find(attachment => attachment.role === 'DRB Photo')?.name || '';
+                        payload.attachments = attachments;
+
+                        if (requestAccessSubmitBtn) {
+                            requestAccessSubmitBtn.textContent = 'Sending...';
+                        }
+                        setRequestAccessMessage('Sending your request for approval...');
+
+                        const response = await fetch(APPS_SCRIPT_URL, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'text/plain;charset=utf-8'
+                            },
+                            body: JSON.stringify({
+                                action: 'request_access',
+                                request: payload
+                            })
+                        });
+
+                        const rawResponse = await response.text();
+                        let result;
+
+                        try {
+                            result = JSON.parse(rawResponse);
+                        } catch (parseError) {
+                            throw new Error('Unexpected response from the request service.');
+                        }
+
+                        if (!response.ok || !result.success) {
+                            throw new Error(result?.error || `Request failed with status ${response.status}.`);
+                        }
+
+                        resetRequestAccessFormState();
+                        setRequestAccessMessage('Request sent successfully. We will review it before enabling login access.', 'success');
+                        if (requestAccessNote) {
+                            requestAccessNote.textContent = 'Request received. Approval is still required before login is enabled.';
+                        }
+
+                        window.setTimeout(() => {
+                            closeRequestAccessModal();
+                            setRequestAccessMessage('');
+                        }, 1400);
+                    } catch (error) {
+                        console.error('Error submitting access request:', error);
+                        setRequestAccessMessage(`Error sending request: ${error.message}`, 'error');
+                    } finally {
+                        if (requestAccessSubmitBtn) {
+                            requestAccessSubmitBtn.disabled = false;
+                            requestAccessSubmitBtn.textContent = 'Send Request';
+                        }
+                    }
+                });
+            }
+
+            if (!supabase?.auth) {
                 if (loginBtn) loginBtn.disabled = true;
                 if (verifyBtn) verifyBtn.disabled = true;
                 if (loginMessage) {
-                    loginMessage.textContent = 'Authentication failed to initialize. Please verify the Supabase script and keys.';
+                    const initError = window.supabaseInitError;
+                    const isFileProtocol = window.location.protocol === 'file:';
+                    const detail = initError?.message ? ` (${initError.message})` : '';
+                    loginMessage.textContent = isFileProtocol
+                        ? `Authentication failed to initialize. Open this app through a local web server instead of file://.${detail}`
+                        : `Authentication failed to initialize. Please verify the Supabase script and keys.${detail}`;
                     loginMessage.classList.add('error');
                 }
                 return;
@@ -1083,25 +2059,51 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     });
                     if (searchInput) searchInput.value = '';
                     currentSearchQuery = '';
+                    setFilterMode('union', false);
                     renderProfiles();
                 });
             }
 
+    function setFilterMode(mode, shouldRender = true) {
+        currentFilterMode = mode === 'intersection' ? 'intersection' : 'union';
+        if (filterModeUnionBtn) {
+            filterModeUnionBtn.classList.toggle('active', currentFilterMode === 'union');
+            filterModeUnionBtn.setAttribute('aria-pressed', String(currentFilterMode === 'union'));
+        }
+        if (filterModeIntersectionBtn) {
+            filterModeIntersectionBtn.classList.toggle('active', currentFilterMode === 'intersection');
+            filterModeIntersectionBtn.setAttribute('aria-pressed', String(currentFilterMode === 'intersection'));
+        }
+        if (shouldRender) renderCurrentView();
+    }
+
+    if (filterModeUnionBtn) {
+        filterModeUnionBtn.addEventListener('click', () => {
+            if (currentFilterMode !== 'union') setFilterMode('union');
+        });
+    }
+
+    if (filterModeIntersectionBtn) {
+        filterModeIntersectionBtn.addEventListener('click', () => {
+            if (currentFilterMode !== 'intersection') setFilterMode('intersection');
+        });
+    }
+
+    setFilterMode(currentFilterMode, false);
+
     function renderProfiles() {
         const searchInput = document.getElementById('search-input');
         currentSearchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
-        const filteredAlumni = filterAlumni(allAlumniData);
-
-        renderDirectory(filteredAlumni);
-        renderMapView(filteredAlumni);
-        renderMemories();
+        renderCurrentView();
     }
 
     async function loadDataFromSupabase() {
         if (!loadingMessage) return;
         loadingMessage.style.display = 'block';
+        loadingMessage.textContent = 'Loading data...';
         allAlumniData = [];
         allowedEmails = new Set();
+        await Promise.all([loadContactPreferences(), loadGreekAffiliations()]);
         
         const sets = { 
             classYears: new Set(), greek: new Set(), military: new Set(), 
@@ -1114,7 +2116,10 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 .from('alumni')
                 .select(`
                     *,
-                    alumni_education (*),
+                    alumni_education (
+                        *,
+                        education_majors (*)
+                    ),
                     alumni_links (*),
                     alumni_awards (*),
                     alumni_leadership (*)
@@ -1122,13 +2127,49 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             if (error) throw error;
 
-            data.forEach(alum => {
+            allAlumniData = data.map(alum => {
+                const educationRows = Array.isArray(alum.alumni_education) ? alum.alumni_education : [];
+                const linkRows = Array.isArray(alum.alumni_links) ? alum.alumni_links : [];
+                const awardRows = Array.isArray(alum.alumni_awards) ? alum.alumni_awards : [];
+                const leadershipRows = Array.isArray(alum.alumni_leadership) ? alum.alumni_leadership : [];
+                const alumnusKey = getAlumnusKey(alum.first_name, alum.last_name, alum.grad_year);
+                const consent = contactPreferences[alumnusKey] || { email: false, phone: false, social: false };
+                const canViewPrivateContact = currentUserEmail === 'admin@drb.network' || (
+                    alum.email &&
+                    currentUserEmail &&
+                    alum.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()
+                );
+                const visibleEmail = canViewPrivateContact || consent.email ? alum.email : null;
+                const visiblePhone = canViewPrivateContact || consent.phone ? alum.phone : null;
+                const visibleSocial = canViewPrivateContact || consent.social;
+                const allSocialMedia = linkRows
+                    .filter(l => l.link_type === 'social' || l.is_social === true)
+                    .map(l => ({
+                        type: l.label || l.type || l.display_text || 'Social',
+                        url: l.url,
+                        display: l.display_text || l.label || l.type || l.url
+                    }))
+                    .filter(l => l.url && l.type.toLowerCase() !== 'instagram');
+                const allWebsites = linkRows
+                    .filter(l => l.link_type === 'website' || l.is_social === false)
+                    .map(l => ({
+                        type: l.label || l.type || l.display_text || 'Website',
+                        url: l.url,
+                        display: l.display_text || l.label || l.type || l.url
+                    }))
+                    .filter(l => l.url);
+                const rawInstagram = (linkRows.find(l => {
+                    const label = (l.label || l.type || l.display_text || '').toLowerCase();
+                    return label === 'instagram';
+                })?.url) || '';
+
                 const record = {
                     id: alum.id,
                     firstName: alum.first_name,
                     lastName: alum.last_name,
                     gradYear: String(alum.grad_year),
-                    photoUrl: alum.photo_url || defaultProfilePic,
+                    rawPhotoUrl: alum.photo_url || '',
+                    photoUrl: alum.photo_url || alum.drb_photo_url || defaultProfilePic,
                     drbPhotoUrl: alum.drb_photo_url,
                     city: alum.city,
                     state: alum.state,
@@ -1137,40 +2178,76 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     tenure: alum.tenure,
                     favoriteStep: alum.favorite_step,
                     about: alum.about,
-                    email: alum.email,
-                    phone: alum.phone,
+                    greekAffiliation: normalizeGreekAffiliation(greekAffiliations[alumnusKey] || ''),
+                    email: visibleEmail,
+                    phone: visiblePhone,
+                    rawEmail: alum.email,
+                    rawPhone: alum.phone,
                     militaryBranch: alum.military_branch,
                     militaryRank: alum.military_rank,
                     fullName: `${alum.first_name} ${alum.last_name}`,
                     fullNameForLogin: (alum.first_name + alum.last_name).replace(/\s/g, '').toLowerCase(),
-                    educationHistory: alum.alumni_education.map(e => ({
-                        university: e.university,
-                        majors: e.major ? [{ original: e.major, normalized: normalizeName(e.major, majorNormalizationMap) }] : [],
-                        degreeLevels: e.degree_level ? [e.degree_level] : [],
-                        gradYear: String(e.grad_year)
-                    })),
-                    awards: alum.alumni_awards.map(a => a.award_name),
-                    leadershipPositions: alum.alumni_leadership.map(l => l.position_name),
-                    socialMedia: alum.alumni_links.filter(l => l.link_type === 'social').map(l => ({ type: l.label, url: l.url, display: l.label })),
-                    websites: alum.alumni_links.filter(l => l.link_type === 'website').map(l => ({ type: l.label, url: l.url, display: l.label })),
-                    instagram: alum.alumni_links.find(l => l.label.toLowerCase() === 'instagram')?.url || ''
+                    educationHistory: educationRows.map(e => {
+                        const majorRows = Array.isArray(e.education_majors) ? e.education_majors : [];
+                        const normalizedUniversity = normalizeName(e.university, universityNormalizationMap);
+                        const majors = majorRows.length > 0
+                            ? majorRows.map(m => ({
+                                original: m.major_name,
+                                normalized: normalizeName(m.major_name, majorNormalizationMap)
+                            })).filter(m => m.normalized)
+                            : (e.major ? [{ original: e.major, normalized: normalizeName(e.major, majorNormalizationMap) }] : []);
+                        const degreeInfo = e.degree_level
+                            ? { degrees: [e.degree_level], degreeLevels: [e.degree_level] }
+                            : parseDegreeInfo(e.degree);
+
+                        return {
+                            university: normalizedUniversity || canonicalizeText(e.university),
+                            majors,
+                            degrees: degreeInfo.degrees,
+                            degreeLevels: degreeInfo.degreeLevels,
+                            gradYear: e.grad_year ? String(e.grad_year) : ''
+                        };
+                    }),
+                    awards: [...new Set(awardRows.map(a => normalizeAwardName(a.award_name)).filter(Boolean))],
+                    leadershipPositions: leadershipRows.map(l => l.position_name).filter(Boolean),
+                    socialMedia: visibleSocial ? allSocialMedia : [],
+                    rawSocialMedia: allSocialMedia,
+                    websites: allWebsites,
+                    instagram: visibleSocial ? rawInstagram : '',
+                    rawInstagram,
+                    consent
                 };
+
+                record.instagramHandle = record.instagram
+                    ? record.instagram.replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/$/, '')
+                    : '';
+                record.instagramUrl = record.instagram
+                    ? (/^https?:\/\//i.test(record.instagram) ? record.instagram : `https://instagram.com/${record.instagram.replace(/^@/, '')}`)
+                    : '';
+                record.hasEducation = record.educationHistory.length > 0;
+                record.hasMilitaryService = !!(record.militaryBranch || record.militaryRank);
+                record.hasRealPhoto = !!(record.rawPhotoUrl || record.drbPhotoUrl);
+                record.industries = extractIndustryTags(record.occupation, record.industry);
+                record.industry = record.industries[0] || '';
 
                 record.universities = [...new Set(record.educationHistory.map(e => e.university).filter(Boolean))];
                 record.majors = [...new Set(record.educationHistory.flatMap(e => e.majors.map(m => m.normalized)).filter(Boolean))];
 
-                allAlumniData.push(record);
-                if (record.email) allowedEmails.add(record.email.toLowerCase().trim());
+                // Removed early return
+                if (record.rawEmail) allowedEmails.add(record.rawEmail.toLowerCase().trim());
                 
                 sets.classYears.add(record.gradYear);
                 if (record.militaryBranch) sets.military.add(record.militaryBranch);
+                if (record.greekAffiliation) sets.greek.add(record.greekAffiliation);
                 record.awards.forEach(a => sets.awards.add(a));
                 record.leadershipPositions.forEach(l => sets.leadership.add(l));
 
                 record.educationHistory.forEach(edu => {
                    if (edu.university) {
-                       const normalizedUni = normalizeName(edu.university, universityNormalizationMap);
-                       sets.universities[normalizedUni] = universityToStateMap[normalizedUni] || 'Other';
+                       sets.universities[edu.university] = universityToStateMap[edu.university] || 'Other';
+                       if (hbcuList.includes(edu.university)) {
+                           sets.universities['HBCU'] = 'Other';
+                       }
                    }
                    edu.majors.forEach(m => {
                        if (m.normalized) sets.majors.add(m.normalized);
@@ -1178,11 +2255,11 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                    edu.degreeLevels.forEach(level => sets.degreeLevels.add(level));
                 });
 
-                if (record.industry) {
-                    const normalizedInd = normalizeName(record.industry, industryNormalizationMap);
-                    sets.industries[normalizedInd] = occupationToCategory[normalizedInd] || 'Other';
-                }
+                record.industries.forEach(industryTag => {
+                    sets.industries[industryTag] = occupationToCategory[industryTag] || 'Other';
+                });
                 if (record.state) sets.locations.add(record.state);
+                return record;
             });
 
             loadingMessage.style.display = 'none';
@@ -1194,12 +2271,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 container.innerHTML = '';
                 const sortedItems = sortFn ? [...items].sort(sortFn) : [...items].sort();
                  sortedItems.forEach(item => {
-                    const div = document.createElement('div');
-                    div.className = 'sub-filter-group';
+                    const labelDiv = document.createElement('label');
+                    labelDiv.className = 'sub-filter-group master-filter-control';
+                    labelDiv.htmlFor = `${prefix}-${item.replace(/\W/g, '-')}`;
+                    labelDiv.style.cssText = 'display:flex; width:100%; margin:0; cursor:pointer; font-weight:400; font-size:0.85em; color:var(--text-secondary);';
                     const checkboxId = `${prefix}-${item.replace(/\W/g, '-')}`;
-                    div.innerHTML = `<input type="checkbox" id="${checkboxId}" value="${item}"><label for="${checkboxId}">${item}</label>`;
-                    container.appendChild(div);
-                    div.querySelector('input').addEventListener('change', renderProfiles);
+                    labelDiv.innerHTML = `<input type="checkbox" id="${checkboxId}" value="${item}"><span class="custom-checkbox"></span><span class="filter-label-text">${item}</span>`;
+                    container.appendChild(labelDiv);
+                    labelDiv.querySelector('input').addEventListener('change', () => {
+                        syncFilterHierarchy(prefix);
+                        renderProfiles();
+                    });
                 });
             };
             
@@ -1219,9 +2301,12 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             
             window.addEventListener('hashchange', router);
             window.addEventListener('resize', renderProfiles);
+            renderCurrentView();
         } catch (error) {
             console.error('Error loading data from Supabase:', error);
-            if (loadingMessage) loadingMessage.textContent = 'Error loading data. Please refresh.';
+            if (loadingMessage) {
+                loadingMessage.textContent = `Error loading data: ${error.message || 'Please refresh.'}`;
+            }
         }
     }
 
@@ -1245,7 +2330,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             function showLoginScreen() {
                  emailStep.style.display = 'block';
                  otpStep.style.display = 'none';
-                 document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure 6-digit access code.';
+                 document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure access code.';
                  loginEmailInput.value = '';
                  loginMessage.textContent = '';
                  if (verifyBtn) verifyBtn.disabled = false;
@@ -1290,16 +2375,22 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     });
 
                     if (error) {
-                        loginMessage.textContent = error.message === 'User not found' 
-                            ? 'Email not found. If you only signed up with a phone number, please contact us.'
+                        const normalizedError = String(error.message || '').toLowerCase();
+                        const isNotApprovedError = normalizedError === 'user not found' || normalizedError.includes('signups not allowed for otp');
+                        loginMessage.textContent = isNotApprovedError
+                            ? 'This email is not approved for login yet. Use Request Alumni Account to submit your details for review.'
                             : 'Error: ' + error.message;
                         loginMessage.classList.add('error');
                         loginBtn.disabled = false;
+
+                        if (isNotApprovedError) {
+                            openRequestAccessFromLogin(rawInput);
+                        }
                     } else {
                         currentUserEmail = rawInput;
                         emailStep.style.display = 'none';
                         otpStep.style.display = 'block';
-                        document.getElementById('login-description').textContent = 'Please enter the 6-digit code we just sent to ' + currentUserEmail + '.';
+                        document.getElementById('login-description').textContent = 'Please enter the code we just sent to ' + currentUserEmail + '.';
                         otpMessage.textContent = 'Code sent successfully!';
                         otpMessage.classList.remove('error');
                     }
@@ -1310,7 +2401,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 verifyBtn.addEventListener('click', async () => {
                     const codeInput = loginOtpInput.value.trim();
                     if (!codeInput || codeInput.length < 6) {
-                        otpMessage.textContent = 'Please enter the full 6-digit code.';
+                        otpMessage.textContent = 'Please enter the full access code.';
                         otpMessage.classList.add('error');
                         return;
                     }
@@ -1366,6 +2457,18 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             });
 
             // --- View Toggles ---
+            const viewMyProfileBtn = document.getElementById('view-my-profile-btn');
+            if (viewMyProfileBtn) {
+                viewMyProfileBtn.addEventListener('click', () => {
+                   if (!currentUserEmail) return;
+                   const myProfile = allAlumniData.find(a => String(a.email).toLowerCase() === String(currentUserEmail).toLowerCase());
+                   if (myProfile) {
+                       window.location.hash = '#profile=' + myProfile.id;
+                   } else {
+                       alert('Your profile details could not be found. Please ensure your email is fully registered.');
+                   }
+                });
+            }
             document.getElementById('view-dashboard-btn').addEventListener('click', () => switchView('dashboard'));
             const viewMapBtn = document.getElementById('view-map-btn');
             if (viewMapBtn) viewMapBtn.addEventListener('click', () => switchView('map'));
@@ -1382,7 +2485,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     if (profilesContainer) profilesContainer.innerHTML = '';
                     document.getElementById('email-step').style.display = 'block';
                     document.getElementById('otp-step').style.display = 'none';
-                    document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure 6-digit access code.';
+                    document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure access code.';
                     loginEmailInput.value = '';
                     loginMessage.textContent = '';
                 });
@@ -1404,8 +2507,252 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const editModal = document.getElementById('edit-modal-overlay');
             const editForm = document.getElementById('edit-profile-form');
             const editMessage = document.getElementById('edit-message');
+            const editEducationEntries = document.getElementById('edit-education-entries');
+            const editLinksEntries = document.getElementById('edit-links-entries');
+            const editLocationInput = document.getElementById('edit-location');
+            const editLocationSuggestions = document.getElementById('edit-location-suggestions');
+            const editCityHidden = document.getElementById('edit-city');
+            const editStateHidden = document.getElementById('edit-state');
             let editingAlumnus = null;
 
+            // --- Location Auto-Suggest (Nominatim) ---
+            let locationDebounce = null;
+            if (editLocationInput) {
+                editLocationInput.addEventListener('input', () => {
+                    clearTimeout(locationDebounce);
+                    // Clear stale city/state when user manually edits
+                    editCityHidden.value = '';
+                    editStateHidden.value = '';
+                    const query = editLocationInput.value.trim();
+                    if (query.length < 2) {
+                        editLocationSuggestions.innerHTML = '';
+                        return;
+                    }
+                    locationDebounce = setTimeout(async () => {
+                        try {
+                            const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6&featuretype=city`, {
+                                headers: { 
+                                    'Accept-Language': 'en',
+                                    'User-Agent': 'DRBNetworkDatabase/1.0'
+                                }
+                            });
+                            const results = await res.json();
+                            editLocationSuggestions.innerHTML = '';
+                            results.forEach(r => {
+                                const addr = r.address || {};
+                                const city = addr.city || addr.town || addr.village || addr.hamlet || '';
+                                const fullState = addr.state || '';
+                                const country = addr.country || '';
+                                // Abbreviate US states (reverse lookup)
+                                const stateAbbrev = Object.entries(stateAbbreviationMap).find(([, name]) => name.toLowerCase() === fullState.toLowerCase())?.[0] || '';
+                                const stateForSave = stateAbbrev || fullState;
+                                const isUS = (addr.country_code === 'us');
+                                // Dropdown shows full info
+                                const dropdownDisplay = [city, fullState, country].filter(Boolean).join(', ');
+                                // Saved display: "City, ST" for US, "City, CC" for international
+                                const savedDisplay = isUS
+                                    ? [city, stateAbbrev || fullState].filter(Boolean).join(', ')
+                                    : [city, (addr.country_code || '').toUpperCase()].filter(Boolean).join(', ');
+                                if (!dropdownDisplay) return;
+                                const li = document.createElement('li');
+                                li.textContent = dropdownDisplay;
+                                li.addEventListener('click', () => {
+                                    editLocationInput.value = savedDisplay;
+                                    editCityHidden.value = city;
+                                    editStateHidden.value = stateForSave;
+                                    editLocationSuggestions.innerHTML = '';
+                                });
+                                editLocationSuggestions.appendChild(li);
+                            });
+                        } catch (err) {
+                            console.warn('Location search error:', err);
+                        }
+                    }, 400);
+                });
+
+                // Close dropdown when clicking outside
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('#edit-location') && !e.target.closest('#edit-location-suggestions')) {
+                        editLocationSuggestions.innerHTML = '';
+                    }
+                });
+            }
+
+            // --- Dynamic Education Entries (Edit Modal) ---
+            const LINK_TYPE_OPTIONS = ['Instagram', 'LinkedIn', 'Twitter / X', 'Facebook', 'Website', 'Other'];
+
+            function addEditEducationEntry(values = {}) {
+                if (!editEducationEntries) return;
+                const entry = document.createElement('div');
+                entry.className = 'request-education-entry';
+                entry.innerHTML = `
+                    <div class="request-entry-header">
+                        <span class="request-entry-title">School</span>
+                        <button type="button" class="btn-secondary request-entry-remove">Remove</button>
+                    </div>
+                    <div class="request-form-grid">
+                        <div class="form-group request-span-2" style="position:relative;">
+                            <label>University</label>
+                            <input type="text" class="edit-edu-university" autocomplete="off" placeholder="Start typing a university..." value="${escapeHTML(values.university || '')}">
+                            <ul class="location-suggestions edit-uni-suggestions"></ul>
+                        </div>
+                        <div class="form-group request-span-2">
+                            <label>Major</label>
+                            <input type="text" class="edit-edu-major" list="request-major-options" autocomplete="off" placeholder="Mechanical Engineering" value="${escapeHTML(values.major || '')}">
+                        </div>
+                        <div class="form-group">
+                            <label>Degree</label>
+                            <input type="text" class="edit-edu-degree" list="request-degree-options" autocomplete="off" placeholder="Bachelor of Science" value="${escapeHTML(values.degree || '')}">
+                        </div>
+                        <div class="form-group">
+                            <label>Graduation Year</label>
+                            <input type="number" class="edit-edu-grad-year" min="1970" max="2100" placeholder="2028" value="${escapeHTML(values.gradYear || '')}">
+                        </div>
+                    </div>
+                `;
+
+                // Wire up university auto-suggest
+                const uniInput = entry.querySelector('.edit-edu-university');
+                const uniSuggestions = entry.querySelector('.edit-uni-suggestions');
+                let uniDebounce = null;
+                uniInput.addEventListener('input', () => {
+                    clearTimeout(uniDebounce);
+                    const q = uniInput.value.trim();
+                    if (q.length < 2) { uniSuggestions.innerHTML = ''; return; }
+                    uniDebounce = setTimeout(async () => {
+                        try {
+                            const res = await fetch(`https://universities.hipolabs.com/search?name=${encodeURIComponent(q)}&limit=8`);
+                            const results = await res.json();
+                            uniSuggestions.innerHTML = '';
+                            // Deduplicate by name
+                            const seen = new Set();
+                            results.slice(0, 8).forEach(u => {
+                                const name = u.name;
+                                if (!name || seen.has(name)) return;
+                                seen.add(name);
+                                const li = document.createElement('li');
+                                li.textContent = name;
+                                li.addEventListener('click', () => {
+                                    uniInput.value = name;
+                                    uniSuggestions.innerHTML = '';
+                                });
+                                uniSuggestions.appendChild(li);
+                            });
+                        } catch (err) { console.warn('University search error:', err); }
+                    }, 300);
+                });
+                // Close on outside click
+                document.addEventListener('click', (e) => {
+                    if (!uniInput.contains(e.target) && !uniSuggestions.contains(e.target)) {
+                        uniSuggestions.innerHTML = '';
+                    }
+                });
+
+                entry.querySelector('.request-entry-remove').addEventListener('click', () => {
+                    entry.remove();
+                    updateEditEducationControls();
+                });
+                editEducationEntries.appendChild(entry);
+                updateEditEducationControls();
+            }
+
+            function updateEditEducationControls() {
+                if (!editEducationEntries) return;
+                const entries = Array.from(editEducationEntries.querySelectorAll('.request-education-entry'));
+                entries.forEach((entry, i) => {
+                    const title = entry.querySelector('.request-entry-title');
+                    const removeBtn = entry.querySelector('.request-entry-remove');
+                    if (title) title.textContent = `School ${i + 1}`;
+                    if (removeBtn) removeBtn.disabled = entries.length === 1;
+                });
+            }
+
+            function serializeEditEducationEntries() {
+                if (!editEducationEntries) return [];
+                return Array.from(editEducationEntries.querySelectorAll('.request-education-entry'))
+                    .map(entry => ({
+                        university: (entry.querySelector('.edit-edu-university')?.value || '').trim(),
+                        major: (entry.querySelector('.edit-edu-major')?.value || '').trim(),
+                        degree: (entry.querySelector('.edit-edu-degree')?.value || '').trim(),
+                        gradYear: (entry.querySelector('.edit-edu-grad-year')?.value || '').trim()
+                    }))
+                    .filter(e => e.university || e.major || e.degree || e.gradYear);
+            }
+
+            document.getElementById('edit-add-education-btn')?.addEventListener('click', () => addEditEducationEntry());
+
+            // --- Dynamic Link Entries (Edit Modal) ---
+            function addEditLinkEntry(values = {}) {
+                if (!editLinksEntries) return;
+                const entry = document.createElement('div');
+                entry.className = 'edit-link-entry';
+                const typeOptions = LINK_TYPE_OPTIONS.map(t => {
+                    const sel = (values.type || '').toLowerCase() === t.toLowerCase() ? 'selected' : '';
+                    return `<option value="${t}" ${sel}>${t}</option>`;
+                }).join('');
+                entry.innerHTML = `
+                    <select class="edit-link-type">${typeOptions}</select>
+                    <input type="text" class="edit-link-url" placeholder="@handle or https://..." value="${escapeHTML(values.url || '')}">
+                    <button type="button" class="edit-link-remove">✕</button>
+                `;
+                entry.querySelector('.edit-link-remove').addEventListener('click', () => entry.remove());
+                editLinksEntries.appendChild(entry);
+            }
+
+            function serializeEditLinkEntries() {
+                if (!editLinksEntries) return [];
+                return Array.from(editLinksEntries.querySelectorAll('.edit-link-entry'))
+                    .map(entry => ({
+                        type: (entry.querySelector('.edit-link-type')?.value || '').trim(),
+                        url: (entry.querySelector('.edit-link-url')?.value || '').trim()
+                    }))
+                    .filter(e => e.url);
+            }
+
+            document.getElementById('edit-add-link-btn')?.addEventListener('click', () => addEditLinkEntry());
+
+            // --- Photo Upload Previews ---
+            const editPhotoFile = document.getElementById('edit-photo-file');
+            const editDrbPhotoFile = document.getElementById('edit-drb-photo-file');
+
+            function setupPhotoPreview(fileInput, previewId, previewImgId, previewNameId, previewSizeId) {
+                if (!fileInput) return;
+                fileInput.addEventListener('change', () => {
+                    const file = fileInput.files[0];
+                    const preview = document.getElementById(previewId);
+                    const previewImg = document.getElementById(previewImgId);
+                    const previewName = document.getElementById(previewNameId);
+                    const previewSize = document.getElementById(previewSizeId);
+                    if (file) {
+                        preview.hidden = false;
+                        previewImg.src = URL.createObjectURL(file);
+                        previewName.textContent = file.name;
+                        previewSize.textContent = (file.size / 1024).toFixed(1) + ' KB';
+                    } else {
+                        preview.hidden = true;
+                    }
+                });
+            }
+
+            setupPhotoPreview(editPhotoFile, 'edit-photo-preview', 'edit-photo-preview-img', 'edit-photo-preview-name', 'edit-photo-preview-size');
+            setupPhotoPreview(editDrbPhotoFile, 'edit-drb-photo-preview', 'edit-drb-photo-preview-img', 'edit-drb-photo-preview-name', 'edit-drb-photo-preview-size');
+
+            async function uploadPhotoToSupabase(file, alumnusId, prefix) {
+                const ext = file.name.split('.').pop().toLowerCase();
+                const path = `${alumnusId}/${prefix}.${ext}`;
+                // Remove old file first (ignore errors)
+                await supabase.storage.from('profile-photos').remove([path]);
+                const { error } = await supabase.storage.from('profile-photos').upload(path, file, {
+                    cacheControl: '3600',
+                    upsert: true
+                });
+                if (error) throw new Error(`Photo upload failed: ${error.message}`);
+                const { data: urlData } = supabase.storage.from('profile-photos').getPublicUrl(path);
+                return urlData.publicUrl;
+            }
+
+
+            // --- Open Edit Modal ---
             window.openEditModal = function(alumnus) {
                 editingAlumnus = alumnus;
                 const isAdmin = currentUserEmail === 'admin@drb.network';
@@ -1415,13 +2762,61 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 document.getElementById('edit-classyear').value = alumnus.gradYear || '';
                 document.getElementById('edit-email').value = alumnus.email || '';
 
-                document.getElementById('edit-city').value = alumnus.city || '';
+                // Location
+                const locationDisplay = [alumnus.city, alumnus.state].filter(Boolean).join(', ');
+                editLocationInput.value = locationDisplay;
+                editCityHidden.value = alumnus.city || '';
+                editStateHidden.value = alumnus.state || '';
+
                 document.getElementById('edit-occupation').value = alumnus.occupation || '';
                 document.getElementById('edit-phone').value = alumnus.phone || '';
-                document.getElementById('edit-instagram').value = alumnus.instagramHandle || '';
-                document.getElementById('edit-social').value = alumnus.socialMedia.map(s => `${s.type}/${s.display}`).join(', ') || '';
-                document.getElementById('edit-website').value = alumnus.websites.map(w => `${w.type}/${w.url}`).join(', ') || '';
                 document.getElementById('edit-about').value = alumnus.about || '';
+
+                // Populate dynamic education entries
+                editEducationEntries.innerHTML = '';
+                if (alumnus.educationHistory && alumnus.educationHistory.length > 0) {
+                    alumnus.educationHistory.forEach(edu => {
+                        addEditEducationEntry({
+                            university: edu.university || '',
+                            major: edu.majors.map(m => m.original || m.normalized).join(', '),
+                            degree: edu.degrees ? edu.degrees.join(', ') : '',
+                            gradYear: edu.gradYear || ''
+                        });
+                    });
+                } else {
+                    addEditEducationEntry();
+                }
+
+                // Populate dynamic link entries
+                editLinksEntries.innerHTML = '';
+                // Instagram
+                if (alumnus.rawInstagram) {
+                    addEditLinkEntry({ type: 'Instagram', url: alumnus.instagramHandle || alumnus.rawInstagram });
+                }
+                // Social media
+                if (alumnus.rawSocialMedia && alumnus.rawSocialMedia.length > 0) {
+                    alumnus.rawSocialMedia.forEach(s => {
+                        const typeLabel = (s.type || '').toLowerCase();
+                        if (typeLabel === 'instagram') return; // already added above
+                        let matchedType = LINK_TYPE_OPTIONS.find(opt => opt.toLowerCase() === typeLabel) || 'Other';
+                        addEditLinkEntry({ type: matchedType, url: s.url });
+                    });
+                }
+                // Websites
+                if (alumnus.websites && alumnus.websites.length > 0) {
+                    alumnus.websites.forEach(w => {
+                        addEditLinkEntry({ type: 'Website', url: w.url });
+                    });
+                }
+                // Ensure at least one empty link row
+                if (editLinksEntries.children.length === 0) {
+                    addEditLinkEntry();
+                }
+
+                // Reset photo inputs
+                if (editPhotoFile) { editPhotoFile.value = ''; document.getElementById('edit-photo-preview').hidden = true; }
+                if (editDrbPhotoFile) { editDrbPhotoFile.value = ''; document.getElementById('edit-drb-photo-preview').hidden = true; }
+
                 editMessage.textContent = '';
                 editMessage.className = 'edit-message';
                 editModal.style.display = 'flex';
@@ -1436,9 +2831,10 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             document.getElementById('modal-close-btn').addEventListener('click', closeEditModal);
             document.getElementById('modal-cancel-btn').addEventListener('click', closeEditModal);
-            editModal.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
+            // Click-outside-to-close behavior removed per user feedback
+            // editModal.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
 
-            editForm.addEventListener('submit', (e) => {
+            editForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
                 if (!editingAlumnus || !currentUserEmail) return;
 
@@ -1447,56 +2843,164 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 saveBtn.textContent = 'Saving...';
                 editMessage.textContent = '';
 
-                const updates = {
-                    'city': document.getElementById('edit-city').value.trim(),
-                    'occupation': document.getElementById('edit-occupation').value.trim(),
-                    'phone': document.getElementById('edit-phone').value.trim(),
-                    'about': document.getElementById('edit-about').value.trim()
-                };
-
-                if (currentUserEmail === 'admin@drb.network') {
-                    const fn = document.getElementById('edit-firstname').value.trim();
-                    if (fn) updates.first_name = fn;
-                    const ln = document.getElementById('edit-lastname').value.trim();
-                    if (ln) updates.last_name = ln;
-                    const cy = parseInt(document.getElementById('edit-classyear').value.trim());
-                    if (cy) updates.grad_year = cy;
-                    const em = document.getElementById('edit-email').value.trim();
-                    if (em) updates.email = em;
-                }
-
                 const alumnusId = editingAlumnus.id;
 
-                supabase
-                    .from('alumni')
-                    .update(updates)
-                    .eq('id', alumnusId)
-                    .then(({ error }) => {
-                        if (error) throw error;
-                        
-                        // Handle links update (Simplistic: delete and re-insert)
-                        // This is a bit complex for a single call, but we'll try to update the main fields first.
-                        // In a real app, we'd handle alumni_links too.
-                        
-                        editMessage.textContent = '✓ Profile updated successfully!';
-                        editMessage.className = 'edit-message success';
-                        
-                        loadDataFromSupabase(); // Refresh local data
-                        
-                        setTimeout(() => {
-                            closeEditModal();
-                            router();
-                        }, 1200);
-                    })
-                    .catch(err => {
-                        console.error('Update error:', err);
-                        editMessage.textContent = 'Error: ' + err.message;
-                        editMessage.className = 'edit-message error';
-                    })
-                    .finally(() => {
-                        saveBtn.disabled = false;
-                        saveBtn.textContent = 'Save Changes';
+                try {
+                    // 0. Upload photos if provided
+                    const photoFile = editPhotoFile?.files[0];
+                    const drbPhotoFile = editDrbPhotoFile?.files[0];
+                    let photoUrl = null;
+                    let drbPhotoUrl = null;
+
+                    if (photoFile) {
+                        saveBtn.textContent = 'Uploading photo...';
+                        photoUrl = await uploadPhotoToSupabase(photoFile, alumnusId, 'photo');
+                    }
+                    if (drbPhotoFile) {
+                        saveBtn.textContent = 'Uploading DRB photo...';
+                        drbPhotoUrl = await uploadPhotoToSupabase(drbPhotoFile, alumnusId, 'drb_photo');
+                    }
+
+                    saveBtn.textContent = 'Saving...';
+
+                    // Parse raw location input if user didn't click auto-suggest
+                    const locVal = editLocationInput.value.trim();
+                    let finalCity = editCityHidden.value.trim();
+                    let finalState = editStateHidden.value.trim();
+                    
+                    if (locVal) {
+                        const expectedDisplay = [finalCity, finalState].filter(Boolean).join(', ');
+                        if (locVal !== expectedDisplay) {
+                            const parts = locVal.split(',').map(s => s.trim());
+                            finalCity = parts[0] || '';
+                            finalState = parts.slice(1).join(', ') || '';
+                        }
+                    } else {
+                        finalCity = ''; finalState = '';
+                    }
+
+                    // 1. Update main alumni record
+                    const updates = {
+                        city: finalCity,
+                        state: finalState,
+                        occupation: document.getElementById('edit-occupation').value.trim(),
+                        phone: document.getElementById('edit-phone').value.trim(),
+                        about: document.getElementById('edit-about').value.trim(),
+                        ...(photoUrl ? { photo_url: photoUrl } : {}),
+                        ...(drbPhotoUrl ? { drb_photo_url: drbPhotoUrl } : {})
+                    };
+
+                    if (currentUserEmail === 'admin@drb.network') {
+                        const fn = document.getElementById('edit-firstname').value.trim();
+                        if (fn) updates.first_name = fn;
+                        const ln = document.getElementById('edit-lastname').value.trim();
+                        if (ln) updates.last_name = ln;
+                        const cy = parseInt(document.getElementById('edit-classyear').value.trim());
+                        if (cy) updates.grad_year = cy;
+                        const em = document.getElementById('edit-email').value.trim();
+                        if (em) updates.email = em;
+                    }
+
+                    const { error: alumniError } = await supabase
+                        .from('alumni')
+                        .update(updates)
+                        .eq('id', alumnusId);
+                    if (alumniError) throw alumniError;
+
+                    // 2. Sync education (delete old, insert new)
+                    // First get existing education IDs to delete their majors
+                    const { data: existingEdu } = await supabase
+                        .from('alumni_education')
+                        .select('id')
+                        .eq('alumnus_id', alumnusId);
+                    
+                    if (existingEdu && existingEdu.length > 0) {
+                        const eduIds = existingEdu.map(e => e.id);
+                        const { error: delMajorsErr } = await supabase.from('education_majors').delete().in('education_id', eduIds);
+                        if (delMajorsErr) throw new Error('Failed to update majors: ' + delMajorsErr.message);
+                    }
+                    const { error: delEduErr } = await supabase.from('alumni_education').delete().eq('alumnus_id', alumnusId);
+                    if (delEduErr) throw new Error('Failed to update education: ' + delEduErr.message);
+
+                    const educationEntries = serializeEditEducationEntries();
+                    for (const edu of educationEntries) {
+                        const { data: newEdu, error: eduInsertErr } = await supabase
+                            .from('alumni_education')
+                            .insert({
+                                alumnus_id: alumnusId,
+                                university: edu.university,
+                                degree: edu.degree,
+                                grad_year: edu.gradYear ? parseInt(edu.gradYear) : null
+                            })
+                            .select('id')
+                            .single();
+                        if (eduInsertErr) throw new Error('Failed to save education: ' + eduInsertErr.message);
+
+                        // Insert majors
+                        if (edu.major && newEdu) {
+                            const majors = edu.major.split(',').map(m => m.trim()).filter(Boolean);
+                            if (majors.length > 0) {
+                                const { error: majInsertErr } = await supabase.from('education_majors').insert(
+                                    majors.map(m => ({ education_id: newEdu.id, major_name: m }))
+                                );
+                                if (majInsertErr) throw new Error('Failed to save majors: ' + majInsertErr.message);
+                            }
+                        }
+                    }
+
+                    // 3. Sync links (delete old, insert new)
+                    const { error: delLinksErr } = await supabase.from('alumni_links').delete().eq('alumnus_id', alumnusId);
+                    if (delLinksErr) throw new Error('Failed to update links: ' + delLinksErr.message);
+
+                    const linkEntries = serializeEditLinkEntries();
+                    const linkInserts = linkEntries.map(link => {
+                        const typeLower = link.type.toLowerCase();
+                        let url = link.url;
+                        let label = link.type;
+                        let linkType = 'social';
+                        let isSocial = true;
+
+                        if (typeLower === 'instagram') {
+                            // Normalize @handle to full URL
+                            const handle = url.replace(/^@/, '').replace(/^https?:\/\/(www\.)?instagram\.com\//i, '').replace(/\/$/, '');
+                            url = `https://instagram.com/${handle}`;
+                            label = 'Instagram';
+                        } else if (typeLower === 'website' || typeLower === 'other') {
+                            linkType = 'website';
+                            isSocial = false;
+                        }
+
+                        return {
+                            alumnus_id: alumnusId,
+                            type: label,
+                            url: url,
+                            display_text: label,
+                            is_social: isSocial
+                        };
                     });
+
+                    if (linkInserts.length > 0) {
+                        const { error: linkErr } = await supabase.from('alumni_links').insert(linkInserts);
+                        if (linkErr) throw new Error('Failed to save links: ' + linkErr.message);
+                    }
+
+                    editMessage.textContent = '✓ Profile updated successfully!';
+                    editMessage.className = 'edit-message success';
+                    
+                    loadDataFromSupabase(); // Refresh local data
+                    
+                    setTimeout(() => {
+                        closeEditModal();
+                        router();
+                    }, 1200);
+                } catch (err) {
+                    console.error('Update error:', err);
+                    editMessage.textContent = 'Error: ' + err.message;
+                    editMessage.className = 'edit-message error';
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save Changes';
+                }
             });
 
             let scrollTimeout;
@@ -1524,9 +3028,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 if(labelText) {
                      labelText.addEventListener('click', (e) => {
                         e.preventDefault();
-                        checkbox.checked = !checkbox.checked;
-                        const changeEvent = new Event('change');
-                        checkbox.dispatchEvent(changeEvent);
+                        e.stopPropagation();
+                        toggleExpansion();
                      });
                 }
                 

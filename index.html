@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#0a0e17">
     <title>DRB Network Database</title>
+    <link rel="icon" type="image/png" href="favicon.png">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@600;700&display=swap" rel="stylesheet">
@@ -13,29 +14,53 @@
     <script src="supabaseClient.js"></script>
     <link rel="stylesheet" href="styles.css?v=3">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
 </head>
 <body>
 <div class="bg-glow"></div>
 <div id="login-screen">
         <div class="login-box">
-            <h1>DRB Network Database</h1>
-            <p id="login-description">An email listed on your profile is strictly required to log in. We will send you a secure 6-digit access code.</p>
-            <div id="login-form">
-                <div id="email-step">
-                    <input type="email" id="login-email" placeholder="Enter your email address">
-                    <button id="login-btn">Send Login Code</button>
-                    <p id="login-message"></p>
-                </div>
-                <div id="otp-step" style="display: none;">
-                    <input type="text" id="login-otp" placeholder="Enter 6-digit code" maxlength="6">
-                    <button id="verify-btn">Verify Code & Access</button>
-                    <p id="otp-message"></p>
-                    <button id="resend-btn" style="background: none; color: var(--carolina-blue); border: none; cursor: pointer; text-decoration: underline; margin-top: 10px; padding: 0;">Try a different email</button>
-                </div>
-                <div id="survey-link-container" style="margin-top: 20px; font-size: 0.9em; color: var(--medium-grey);">
-                    Not in the database? Contact Richard or Vincent for access.
-                </div>
+            <div class="login-hero">
+                <p class="login-kicker">Continuing a legacy of success</p>
+                <h1>DRB Network Database</h1>
+                <p class="login-intro">Approved alumni can sign in with a one-time code. New alumni can request access using the survey-style form.</p>
+            </div>
+            <div class="login-access-grid">
+                <section class="login-panel login-panel-primary">
+                    <div class="login-panel-header">
+                        <h2>Already Approved?</h2>
+                        <p id="login-description">Use the email listed on your profile and we’ll send you a secure access code.</p>
+                    </div>
+                    <div id="login-form">
+                        <div id="email-step">
+                            <input type="email" id="login-email" placeholder="Enter your email address">
+                            <button id="login-btn">Send Login Code</button>
+                            <p id="login-message"></p>
+                        </div>
+                        <div id="otp-step" style="display: none;">
+                            <input type="text" id="login-otp" placeholder="Enter OTP code" maxlength="8">
+                            <button id="verify-btn">Verify Code & Access</button>
+                            <p id="otp-message"></p>
+                            <button id="resend-btn">Try a different email</button>
+                        </div>
+                    </div>
+                </section>
+                <aside id="survey-link-container" class="login-panel login-panel-secondary">
+                    <div class="login-panel-header">
+                        <h2>Need Access?</h2>
+                        <p class="request-access-copy">Request an alumni account using the same structure as the DRB survey. Your submission will be reviewed before login is enabled.</p>
+                    </div>
+                    <button id="request-access-btn" type="button" class="request-access-trigger">Request Alumni Account</button>
+                    <ul class="login-request-list">
+                        <li>Share your DRB, education, and contact details</li>
+                        <li>Upload current and DRB photos if you have them</li>
+                        <li>Set exactly what contact info may be shared</li>
+                    </ul>
+                    <p class="request-access-note">Requests are emailed for approval before the account goes live.</p>
+                </aside>
             </div>
         </div>
     </div>
@@ -55,6 +80,7 @@
             </div>
             <button id="toggle-filters-btn">Filters</button>
             <div id="view-toggle" class="view-toggle">
+                <button id="view-my-profile-btn" class="view-btn" title="My Profile"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg></button>
                 <button id="view-dashboard-btn" class="view-btn active" title="Directory"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M3 13h8V3H3v10zm0 8h8v-6H3v6zm10 0h8V11h-8v10zm0-18v6h8V3h-8z"/></svg></button>
                 <button id="view-map-btn" class="view-btn" title="Map View"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg></button>
                 <button id="view-memories-btn" class="view-btn" title="Memories Page"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c0 1.1.9-2 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></button>
@@ -66,9 +92,15 @@
     </header>
 
     <div id="filter-panel">
-        <div class="filter-header" style="display:flex;justify-content:space-between;align-items:center;">
-             <h3 style="margin: 0;">Filters</h3>
-             <button id="reset-filters-btn" class="drb-btn secondary" style="padding: 4px 10px; font-size: 0.8rem; height: auto;">Reset Filters</button>
+        <div class="filter-header">
+             <h3>Filters</h3>
+             <div class="filter-header-actions">
+                 <div class="filter-mode-toggle" role="group" aria-label="Filter match mode">
+                     <button id="filter-mode-union-btn" class="filter-mode-btn active" type="button">Match Any</button>
+                     <button id="filter-mode-intersection-btn" class="filter-mode-btn" type="button">Match All</button>
+                 </div>
+                 <button id="reset-filters-btn" class="filter-reset-btn" type="button">Reset Filters</button>
+             </div>
         </div>
         <div id="filter-options">
              <div class="filter-group">
@@ -91,6 +123,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="drb-awards-sub-filter">
                             <input type="checkbox" id="drb-awards-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">DRB Awards</span>
                             <span class="arrow"></span>
                         </label>
@@ -99,6 +132,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="drb-leadership-sub-filter">
                             <input type="checkbox" id="drb-leadership-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">DRB Leadership</span>
                             <span class="arrow"></span>
                         </label>
@@ -117,6 +151,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="university-sub-filter">
                             <input type="checkbox" id="university-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">Universities</span>
                             <span class="arrow"></span>
                         </label>
@@ -125,6 +160,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="major-sub-filter">
                             <input type="checkbox" id="major-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">Majors</span>
                             <span class="arrow"></span>
                         </label>
@@ -133,6 +169,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="degree-sub-filter">
                             <input type="checkbox" id="degree-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">Degree Level</span>
                             <span class="arrow"></span>
                         </label>
@@ -141,6 +178,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="greek-sub-filter">
                             <input type="checkbox" id="greek-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">Greek Affiliation</span>
                             <span class="arrow"></span>
                         </label>
@@ -159,6 +197,7 @@
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="industry-sub-filter">
                             <input type="checkbox" id="industry-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">Industry</span>
                             <span class="arrow"></span>
                         </label>
@@ -167,6 +206,7 @@
                      <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="military-sub-filter">
                             <input type="checkbox" id="military-sub-filter">
+                            <span class="custom-checkbox"></span>
                             <span class="filter-label-text">Military Service</span>
                             <span class="arrow"></span>
                         </label>
@@ -190,6 +230,7 @@
         <main id="main-content">
             <div id="dashboard-view" style="display:none;">
                 <div id="stats-grid">
+                    <div class="stat-card stat-anniversary"><div class="stat-number" id="stat-anniversary">0</div><div class="stat-label">Days to Anniversary</div></div>
                     <div class="stat-card stat-total"><div class="stat-number" id="stat-total">0</div><div class="stat-label">Total Alumni</div></div>
                     <div class="stat-card stat-cities"><div class="stat-number" id="stat-cities">0</div><div class="stat-label">Cities</div></div>
                     <div class="stat-card stat-industries"><div class="stat-number" id="stat-industries">0</div><div class="stat-label">Industries</div></div>
@@ -245,6 +286,7 @@
                 </div>
             </div>
         </main>
+    </div>
 
         <!-- Edit Profile Modal -->
         <div id="edit-modal-overlay" class="modal-overlay" style="display:none;">
@@ -256,48 +298,106 @@
                 <form id="edit-profile-form">
                     <div id="admin-edit-fields" style="display:none; padding:15px; background:rgba(255,193,7,0.1); border:1px solid rgba(255,193,7,0.3); border-radius:8px; margin-bottom:20px;">
                         <h4 style="margin-top:0; color:#b18600; font-size:12px; text-transform:uppercase; letter-spacing:1px; margin-bottom:12px;">Admin Only Fields</h4>
-                        <div class="form-group">
-                            <label for="edit-firstname">First Name</label>
-                            <input type="text" id="edit-firstname" name="firstname">
+                        <div class="request-form-grid">
+                            <div class="form-group">
+                                <label for="edit-firstname">First Name</label>
+                                <input type="text" id="edit-firstname" name="firstname">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-lastname">Last Name</label>
+                                <input type="text" id="edit-lastname" name="lastname">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-classyear">Class Year</label>
+                                <input type="number" id="edit-classyear" name="classyear">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-email">Login Email</label>
+                                <input type="email" id="edit-email" name="email">
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="edit-lastname">Last Name</label>
-                            <input type="text" id="edit-lastname" name="lastname">
+                    </div>
+                    <div class="request-form-section" style="margin-top: 0; padding-top: 0; border: none;">
+                        <h3 style="margin-top: 0;">Personal Details</h3>
+                        <div class="request-form-grid">
+                            <div class="form-group request-span-2" style="position:relative;">
+                                <label for="edit-location">Current Location</label>
+                                <input type="text" id="edit-location" name="location" placeholder="Start typing a city..." autocomplete="off">
+                                <input type="hidden" id="edit-city" name="city">
+                                <input type="hidden" id="edit-state" name="state">
+                                <ul id="edit-location-suggestions" class="location-suggestions"></ul>
+                            </div>
+                            <div class="form-group request-span-2">
+                                <label for="edit-occupation">Occupation / Industry</label>
+                                <input type="text" id="edit-occupation" name="occupation" list="request-occupation-options" autocomplete="off" placeholder="Your occupation">
+                            </div>
+                            <div class="form-group">
+                                <label for="edit-phone">Phone Number</label>
+                                <input type="tel" id="edit-phone" name="phone" placeholder="(555) 555-5555">
+                            </div>
+                            <div class="form-group request-span-2">
+                                <label for="edit-about">Highlights / About</label>
+                                <textarea id="edit-about" name="about" rows="4" placeholder="Tell us about yourself..."></textarea>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="edit-classyear">Class Year</label>
-                            <input type="number" id="edit-classyear" name="classyear">
+                    </div>
+
+                    <div class="request-form-section">
+                        <div class="request-section-header">
+                            <div>
+                                <h3>Higher Education</h3>
+                                <p class="request-section-note">Add or update your schools.</p>
+                            </div>
+                            <button type="button" id="edit-add-education-btn" class="btn-secondary request-inline-btn">Add School</button>
                         </div>
-                        <div class="form-group">
-                            <label for="edit-email">Login Email</label>
-                            <input type="email" id="edit-email" name="email">
+                        <div id="edit-education-entries"></div>
+                    </div>
+
+                    <div class="request-form-section">
+                        <div class="request-section-header">
+                            <div>
+                                <h3>Social &amp; Links</h3>
+                                <p class="request-section-note">Instagram, LinkedIn, websites, etc.</p>
+                            </div>
+                            <button type="button" id="edit-add-link-btn" class="btn-secondary request-inline-btn">Add Link</button>
+                        </div>
+                        <div id="edit-links-entries"></div>
+                    </div>
+
+                    <div class="request-form-section">
+                        <div class="request-section-header">
+                            <div>
+                                <h3>Profile Photos</h3>
+                                <p class="request-section-note">Upload or update your photos.</p>
+                            </div>
+                        </div>
+                        <div class="request-upload-grid">
+                            <div class="request-upload-card">
+                                <label>Current Photo</label>
+                                <input type="file" id="edit-photo-file" accept="image/*">
+                                <div id="edit-photo-preview" class="request-upload-preview" hidden>
+                                    <img id="edit-photo-preview-img" src="" alt="Preview">
+                                    <div class="request-upload-meta">
+                                        <span class="request-upload-name" id="edit-photo-preview-name"></span>
+                                        <span class="request-upload-size" id="edit-photo-preview-size"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="request-upload-card">
+                                <label>DRB Photo</label>
+                                <input type="file" id="edit-drb-photo-file" accept="image/*">
+                                <div id="edit-drb-photo-preview" class="request-upload-preview" hidden>
+                                    <img id="edit-drb-photo-preview-img" src="" alt="Preview">
+                                    <div class="request-upload-meta">
+                                        <span class="request-upload-name" id="edit-drb-photo-preview-name"></span>
+                                        <span class="request-upload-size" id="edit-drb-photo-preview-size"></span>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="form-group">
-                        <label for="edit-occupation">Occupation / Industry</label>
-                        <input type="text" id="edit-occupation" name="occupation" placeholder="Your occupation">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-phone">Phone Number</label>
-                        <input type="tel" id="edit-phone" name="phone" placeholder="(555) 555-5555">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-instagram">Instagram Handle</label>
-                        <input type="text" id="edit-instagram" name="instagram" placeholder="@yourhandle">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-social">Social Media (Type/Handle)</label>
-                        <input type="text" id="edit-social" name="social" placeholder="LinkedIn/yourprofile">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-website">Website (Type/URL)</label>
-                        <input type="text" id="edit-website" name="website" placeholder="Personal/https://example.com">
-                    </div>
-                    <div class="form-group">
-                        <label for="edit-about">Highlights / About</label>
-                        <textarea id="edit-about" name="about" rows="4" placeholder="Tell us about yourself..."></textarea>
-                    </div>
-                    <div class="form-actions">
+
+                    <div class="form-actions" style="margin-top: 25px;">
                         <button type="button" id="modal-cancel-btn" class="btn-secondary">Cancel</button>
                         <button type="submit" id="modal-save-btn" class="btn-primary">Save Changes</button>
                     </div>
@@ -305,7 +405,313 @@
                 </form>
             </div>
         </div>
-    </div>
+
+        <div id="request-access-modal-overlay" class="modal-overlay" style="display:none;">
+            <div class="modal-content request-access-modal">
+                <div class="modal-header">
+                    <div>
+                        <h2>Request Alumni Account</h2>
+                        <p class="request-modal-subtitle">Share your details and the submission will be emailed for approval before your account goes live.</p>
+                    </div>
+                    <button id="request-access-close-btn" class="modal-close" type="button">&times;</button>
+                </div>
+                <form id="request-access-form">
+                    <div class="request-form-section">
+                        <h3>Basic Information</h3>
+                        <div class="request-form-grid">
+                            <div class="form-group">
+                                <label for="request-first-name">First Name</label>
+                                <input type="text" id="request-first-name" name="first_name" autocomplete="given-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-last-name">Last Name</label>
+                                <input type="text" id="request-last-name" name="last_name" autocomplete="family-name" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-grad-year">ERHS Graduation Year</label>
+                                <input type="number" id="request-grad-year" name="grad_year" min="1970" max="2100" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-occupation">Occupation / Industry</label>
+                                <input type="text" id="request-occupation" name="occupation" list="request-occupation-options" autocomplete="off" placeholder="Software Engineer">
+                                <p class="request-field-hint">Start typing to choose from common career paths, or enter your own.</p>
+                            </div>
+                            <div class="form-group request-span-2" style="position: relative;">
+                                <label for="request-location">Location (City, State/Country)</label>
+                                <input type="text" id="request-location" name="location" autocomplete="off" placeholder="Start typing to search city..." required>
+                                <div id="request-location-results" class="autocomplete-results"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="request-form-section">
+                        <div class="request-section-header">
+                            <div>
+                                <h3>Higher Education</h3>
+                                <p class="request-section-note">Add one school at a time and use the guided suggestions where they help.</p>
+                            </div>
+                            <button type="button" id="add-education-entry-btn" class="btn-secondary request-inline-btn">Add Another School</button>
+                        </div>
+                        <div id="request-education-entries"></div>
+                        <template id="request-education-entry-template">
+                            <div class="request-education-entry">
+                                <div class="request-entry-header">
+                                    <span class="request-entry-title">School</span>
+                                    <button type="button" class="btn-secondary request-entry-remove">Remove</button>
+                                </div>
+                                <div class="request-form-grid">
+                                    <div class="form-group request-span-2" style="position:relative;">
+                                        <label>University</label>
+                                        <input type="text" class="request-education-university" autocomplete="off" placeholder="Start typing a university...">
+                                        <ul class="location-suggestions request-uni-suggestions"></ul>
+                                        <p class="request-field-hint">Start typing to choose from US universities.</p>
+                                    </div>
+                                    <div class="form-group request-span-2">
+                                        <label>Major</label>
+                                        <input type="text" class="request-education-major" list="request-major-options" autocomplete="off" placeholder="Mechanical Engineering">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Degree</label>
+                                        <input type="text" class="request-education-degree" list="request-degree-options" autocomplete="off" placeholder="Bachelor of Science">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Graduation Year</label>
+                                        <input type="number" class="request-education-grad-year" min="1970" max="2100" placeholder="2028">
+                                    </div>
+                                </div>
+                            </div>
+                        </template>
+                    </div>
+
+                    <div class="request-form-section">
+                        <h3>DRB and Alumni Details</h3>
+                        <div class="request-form-grid">
+                            <div class="form-group request-span-2">
+                                <label for="request-leadership">Leadership Positions Held</label>
+                                <div class="request-choice-grid">
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="leadership_option" value="Captain">
+                                        <span>Captain</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="leadership_option" value="Co-Captain">
+                                        <span>Co-Captain</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="leadership_option" value="Secretary">
+                                        <span>Secretary</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="leadership_option" value="Social Chair">
+                                        <span>Social Chair</span>
+                                    </label>
+                                    <input type="text" id="request-leadership-other" name="leadership_other" placeholder="Other positions">
+                                </div>
+                            </div>
+                            <div class="form-group request-span-2">
+                                <label for="request-awards">DRB Awards</label>
+                                <div class="request-choice-grid">
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Most Valuable Stepper">
+                                        <span>Most Valuable Stepper</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Best Stepper">
+                                        <span>Best Stepper</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Step Master/Imagineer OTY">
+                                        <span>Step Master/Imagineer OTY</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Rookie OTY">
+                                        <span>Rookie OTY</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Entertainer OTY">
+                                        <span>Entertainer OTY</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Most Improved">
+                                        <span>Most Improved</span>
+                                    </label>
+                                    <label class="request-choice">
+                                        <input type="checkbox" name="award_option" value="Stage Breaker">
+                                        <span>Stage Breaker</span>
+                                    </label>
+                                    <input type="text" id="request-awards-other" name="awards_other" placeholder="Other awards">
+                                </div>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-greek">Greek Affiliation</label>
+                                <select id="request-greek" name="greek_affiliation">
+                                    <option value="">Select an affiliation</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-tenure">Tenure on DRB (Years)</label>
+                                <select id="request-tenure" name="tenure">
+                                    <option value="">Select tenure</option>
+                                    <option value="1">1</option>
+                                    <option value="2">2</option>
+                                    <option value="3">3</option>
+                                    <option value="4">4</option>
+                                </select>
+                            </div>
+                            <div class="form-group request-span-2">
+                                <label for="request-favorite-step">Favorite Step</label>
+                                <input type="text" id="request-favorite-step" name="favorite_step" placeholder="Kappa Step">
+                            </div>
+                            <div class="form-group">
+                                <label for="request-military-branch">Military Branch</label>
+                                <select id="request-military-branch" name="military_branch">
+                                    <option value="">Select a branch</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-military-rank">Military Rank</label>
+                                <input type="text" id="request-military-rank" name="military_rank" placeholder="Captain">
+                            </div>
+                            <div class="form-group request-span-2">
+                                <label for="request-about">Highlights / About</label>
+                                <textarea id="request-about" name="about" rows="4" placeholder="Tell us about yourself, your work, and anything you'd like alumni to know."></textarea>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="request-form-section">
+                        <h3>Photos</h3>
+                        <p class="request-section-note">Optional. Images are resized in the browser and attached to the approval email.</p>
+                        <div class="request-upload-grid">
+                            <div class="request-upload-card">
+                                <label for="request-photo-current">Current Photo</label>
+                                <input type="file" id="request-photo-current" name="current_photo" accept="image/*">
+                                <p class="request-upload-note">Recommended for your live profile card.</p>
+                                <div id="request-photo-current-preview" class="request-upload-preview" hidden>
+                                    <img src="" alt="Current photo preview">
+                                    <div class="request-upload-meta">
+                                        <span class="request-upload-name"></span>
+                                        <span class="request-upload-size"></span>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="request-upload-card">
+                                <label for="request-photo-drb">DRB Photo</label>
+                                <input type="file" id="request-photo-drb" name="drb_photo" accept="image/*">
+                                <p class="request-upload-note">Use this if you want the profile flip image populated too.</p>
+                                <div id="request-photo-drb-preview" class="request-upload-preview" hidden>
+                                    <img src="" alt="DRB photo preview">
+                                    <div class="request-upload-meta">
+                                        <span class="request-upload-name"></span>
+                                        <span class="request-upload-size"></span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="request-form-section">
+                        <h3>Contact Information</h3>
+                        <div class="form-group request-span-2">
+                            <label>I’d like DRB to contact me about future events</label>
+                            <div class="request-choice-grid request-choice-grid-compact">
+                                <label class="request-choice">
+                                    <input type="radio" name="contact_for_events" value="Yes" checked>
+                                    <span>Yes</span>
+                                </label>
+                                <label class="request-choice">
+                                    <input type="radio" name="contact_for_events" value="No">
+                                    <span>No</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="request-form-grid">
+                            <div class="form-group">
+                                <label for="request-email">Email</label>
+                                <input type="email" id="request-email" name="email" autocomplete="email" placeholder="example@example.com" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="request-phone">Phone Number</label>
+                                <input type="tel" id="request-phone" name="phone" autocomplete="tel" placeholder="(555) 555-5555">
+                            </div>
+                            <div class="form-group">
+                                <label for="request-instagram">Instagram</label>
+                                <input type="text" id="request-instagram" name="instagram" placeholder="@yourhandle">
+                            </div>
+                        </div>
+                        
+                        <div class="request-section-header" style="margin-top: 20px;">
+                            <div>
+                                <h4 style="margin: 0; font-size: 1.1em;">Other Websites & Links</h4>
+                            </div>
+                            <button type="button" id="add-request-link-btn" class="btn-secondary request-inline-btn">+ Add Link</button>
+                        </div>
+                        <div id="request-links-entries"></div>
+                        <template id="request-link-entry-template">
+                            <div class="request-link-entry" style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 15px; margin-bottom: 12px; align-items: end;">
+                                <div class="form-group">
+                                    <label>Platform</label>
+                                    <select class="request-link-platform">
+                                        <option value="LinkedIn">LinkedIn</option>
+                                        <option value="Twitter">Twitter / X</option>
+                                        <option value="GitHub">GitHub</option>
+                                        <option value="Portfolio">Portfolio</option>
+                                        <option value="Company">Company</option>
+                                        <option value="Blog">Blog</option>
+                                        <option value="Other">Other</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>URL</label>
+                                    <input type="url" class="request-link-url" placeholder="https://...">
+                                </div>
+                                <button type="button" class="btn-secondary request-link-remove" style="margin-bottom: 2px;">Remove</button>
+                            </div>
+                        </template>
+                        <div class="request-checkbox-grid">
+                            <label class="request-checkbox master-filter-control">
+                                <input type="checkbox" id="request-share-email" name="share_email">
+                                <span class="custom-checkbox"></span>
+                                <span class="filter-label-text" style="font-size: 1em; font-weight: 400; color: var(--text-secondary);">Okay to share my email with alumni</span>
+                            </label>
+                            <label class="request-checkbox master-filter-control">
+                                <input type="checkbox" id="request-share-phone" name="share_phone">
+                                <span class="custom-checkbox"></span>
+                                <span class="filter-label-text" style="font-size: 1em; font-weight: 400; color: var(--text-secondary);">Okay to share my phone with alumni</span>
+                            </label>
+                            <label class="request-checkbox master-filter-control">
+                                <input type="checkbox" id="request-share-social" name="share_social">
+                                <span class="custom-checkbox"></span>
+                                <span class="filter-label-text" style="font-size: 1em; font-weight: 400; color: var(--text-secondary);">Okay to share my social links with alumni</span>
+                            </label>
+                            <label class="request-checkbox master-filter-control">
+                                <input type="checkbox" id="request-share-none" name="share_none">
+                                <span class="custom-checkbox"></span>
+                                <span class="filter-label-text" style="font-size: 1em; font-weight: 400; color: var(--text-secondary);">No, do not share my contact</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="request-form-section">
+                        <h3>Approval Notes</h3>
+                        <div class="form-group">
+                            <label for="request-notes">Anything the reviewer should know?</label>
+                            <textarea id="request-notes" name="review_notes" rows="4" placeholder="Optional context for approval, updates, or missing information."></textarea>
+                        </div>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="button" id="request-access-cancel-btn" class="btn-secondary">Cancel</button>
+                        <button type="submit" id="request-access-submit-btn" class="btn-primary">Send Request</button>
+                    </div>
+                    <p id="request-access-message" class="edit-message"></p>
+                </form>
+            </div>
+        </div>
+    <datalist id="request-university-options"></datalist>
+    <datalist id="request-major-options"></datalist>
+    <datalist id="request-degree-options"></datalist>
+    <datalist id="request-occupation-options"></datalist>
     <script src="secrets.js"></script>
     <script src="config.js"></script>
     <script src="app.js"></script>
