@@ -12,7 +12,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script src="supabaseClient.js"></script>
-    <link rel="stylesheet" href="styles.css?v=3">
+    <link rel="stylesheet" href="styles.css?v=4">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
     <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
@@ -25,42 +25,72 @@
         <div class="login-box">
             <div class="login-hero">
                 <p class="login-kicker">Continuing a legacy of success</p>
-                <h1>DRB Network Database</h1>
-                <p class="login-intro">Approved alumni can sign in with a one-time code. New alumni can request access using the survey-style form.</p>
+                <h1>Welcome to the DRB Network</h1>
+                <p class="login-intro">If your profile is already in the directory, we’ll email you a quick sign-in code. New here? You can request access in just a few minutes.</p>
             </div>
             <div class="login-access-grid">
-                <section class="login-panel login-panel-primary">
-                    <div class="login-panel-header">
-                        <h2>Already Approved?</h2>
-                        <p id="login-description">Use the email listed on your profile and we’ll send you a secure access code.</p>
-                    </div>
-                    <div id="login-form">
-                        <div id="email-step">
-                            <input type="email" id="login-email" placeholder="Enter your email address">
-                            <button id="login-btn">Send Login Code</button>
-                            <p id="login-message"></p>
+                <section class="login-panel login-panel-unified">
+                    <div class="login-panel-grid">
+                        <div class="login-panel-block login-primary-pane">
+                            <div class="login-panel-header">
+                                <p class="login-panel-eyebrow">Member sign in</p>
+                                <h2>Welcome back</h2>
+                                <p id="login-description">Use the email tied to your profile and we’ll send a quick code to sign you in.</p>
+                            </div>
+                            <div id="login-form">
+                                <div id="email-step">
+                                    <input type="email" id="login-email" placeholder="Enter your email">
+                                    <button id="login-btn">Email me a code</button>
+                                    <p id="login-message"></p>
+                                </div>
+                                <div id="otp-step" style="display: none;">
+                                    <input type="text" id="login-otp" placeholder="Enter your code" maxlength="8">
+                                    <button id="verify-btn">Sign in</button>
+                                    <p id="otp-message"></p>
+                                    <button id="resend-btn">Use a different email</button>
+                                </div>
+                            </div>
                         </div>
-                        <div id="otp-step" style="display: none;">
-                            <input type="text" id="login-otp" placeholder="Enter OTP code" maxlength="8">
-                            <button id="verify-btn">Verify Code & Access</button>
-                            <p id="otp-message"></p>
-                            <button id="resend-btn">Try a different email</button>
-                        </div>
+                        <aside id="survey-link-container" class="login-panel-block login-secondary-pane">
+                            <div class="login-panel-header">
+                                <div class="premium-badge">
+                                    <span class="badge-dot"></span>
+                                    New here?
+                                </div>
+                                <h2>Request access</h2>
+                                <p class="request-access-copy">Not in the directory yet? Share a few details and we’ll review your request before turning on access.</p>
+                            </div>
+
+                            <div class="request-features">
+                                <div class="request-feature-item">
+                                    <div class="feature-icon">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+                                    </div>
+                                    <div class="feature-text">Career and education</div>
+                                </div>
+                                <div class="request-feature-item">
+                                    <div class="feature-icon">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c0 1.1.9-2 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg>
+                                    </div>
+                                    <div class="feature-text">Photos and memories</div>
+                                </div>
+                                <div class="request-feature-item">
+                                    <div class="feature-icon">
+                                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M18 8h-1V6c0-2.76-2.24-5-5-5S7 3.24 7 6v2H6c-1.1 0-2 .9-2 2v10c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V10c0-1.1-.9-2-2-2zm-6 9c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2zm3.1-9H8.9V6c0-1.71 1.39-3.1 3.1-3.1 1.71 0 3.1 1.39 3.1 3.1v2z"/></svg>
+                                    </div>
+                                    <div class="feature-text">Privacy controls</div>
+                                </div>
+                            </div>
+
+                            <button id="request-access-btn" type="button" class="request-access-trigger">
+                                <span>Request access</span>
+                                <svg class="trigger-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z"/></svg>
+                            </button>
+                            
+                            <p class="request-access-note">Most requests are reviewed before access goes live.</p>
+                        </aside>
                     </div>
                 </section>
-                <aside id="survey-link-container" class="login-panel login-panel-secondary">
-                    <div class="login-panel-header">
-                        <h2>Need Access?</h2>
-                        <p class="request-access-copy">Request an alumni account using the same structure as the DRB survey. Your submission will be reviewed before login is enabled.</p>
-                    </div>
-                    <button id="request-access-btn" type="button" class="request-access-trigger">Request Alumni Account</button>
-                    <ul class="login-request-list">
-                        <li>Share your DRB, education, and contact details</li>
-                        <li>Upload current and DRB photos if you have them</li>
-                        <li>Set exactly what contact info may be shared</li>
-                    </ul>
-                    <p class="request-access-note">Requests are emailed for approval before the account goes live.</p>
-                </aside>
             </div>
         </div>
     </div>
@@ -155,7 +185,10 @@
                             <span class="filter-label-text">Universities</span>
                             <span class="arrow"></span>
                         </label>
-                        <div id="university-options-container" class="options-container"></div>
+                        <div id="university-filters-container" class="options-container">
+                            <div id="university-options-container"></div>
+                            <div id="university-tag-options-container" class="university-tag-options"></div>
+                        </div>
                     </div>
                     <div class="filter-group">
                         <label class="master-filter-control sub-master-control" for="major-sub-filter">
@@ -438,7 +471,8 @@
                             </div>
                             <div class="form-group request-span-2" style="position: relative;">
                                 <label for="request-location">Location (City, State/Country)</label>
-                                <input type="text" id="request-location" name="location" autocomplete="off" placeholder="Start typing to search city..." required>
+                                <input type="text" id="request-location" name="location" autocomplete="off" placeholder="Optional: city, state, or country">
+                                <p class="request-field-hint">Optional. Start typing if you want to add where you're based.</p>
                                 <div id="request-location-results" class="autocomplete-results"></div>
                             </div>
                         </div>
@@ -505,8 +539,8 @@
                                         <input type="checkbox" name="leadership_option" value="Social Chair">
                                         <span>Social Chair</span>
                                     </label>
-                                    <input type="text" id="request-leadership-other" name="leadership_other" placeholder="Other positions">
                                 </div>
+                                <input type="text" id="request-leadership-other" name="leadership_other" class="request-choice-other" placeholder="Other positions">
                             </div>
                             <div class="form-group request-span-2">
                                 <label for="request-awards">DRB Awards</label>
@@ -539,14 +573,13 @@
                                         <input type="checkbox" name="award_option" value="Stage Breaker">
                                         <span>Stage Breaker</span>
                                     </label>
-                                    <input type="text" id="request-awards-other" name="awards_other" placeholder="Other awards">
                                 </div>
+                                <input type="text" id="request-awards-other" name="awards_other" class="request-choice-other" placeholder="Other awards">
                             </div>
                             <div class="form-group">
                                 <label for="request-greek">Greek Affiliation</label>
-                                <select id="request-greek" name="greek_affiliation">
-                                    <option value="">Select an affiliation</option>
-                                </select>
+                                <input type="text" id="request-greek" name="greek_affiliation" list="request-greek-options" placeholder="Type an organization">
+                                <datalist id="request-greek-options"></datalist>
                             </div>
                             <div class="form-group">
                                 <label for="request-tenure">Tenure on DRB (Years)</label>
@@ -560,7 +593,7 @@
                             </div>
                             <div class="form-group request-span-2">
                                 <label for="request-favorite-step">Favorite Step</label>
-                                <input type="text" id="request-favorite-step" name="favorite_step" placeholder="Kappa Step">
+                                <input type="text" id="request-favorite-step" name="favorite_step" placeholder="Busy Busy">
                             </div>
                             <div class="form-group">
                                 <label for="request-military-branch">Military Branch</label>
@@ -586,7 +619,7 @@
                             <div class="request-upload-card">
                                 <label for="request-photo-current">Current Photo</label>
                                 <input type="file" id="request-photo-current" name="current_photo" accept="image/*">
-                                <p class="request-upload-note">Recommended for your live profile card.</p>
+                                <p class="request-upload-note">This is how you're primarily displayed in the directory.</p>
                                 <div id="request-photo-current-preview" class="request-upload-preview" hidden>
                                     <img src="" alt="Current photo preview">
                                     <div class="request-upload-meta">
@@ -598,7 +631,7 @@
                             <div class="request-upload-card">
                                 <label for="request-photo-drb">DRB Photo</label>
                                 <input type="file" id="request-photo-drb" name="drb_photo" accept="image/*">
-                                <p class="request-upload-note">Use this if you want the profile flip image populated too.</p>
+                                <p class="request-upload-note">This is for the archive and the profile flip image.</p>
                                 <div id="request-photo-drb-preview" class="request-upload-preview" hidden>
                                     <img src="" alt="DRB photo preview">
                                     <div class="request-upload-meta">
@@ -648,7 +681,7 @@
                         </div>
                         <div id="request-links-entries"></div>
                         <template id="request-link-entry-template">
-                            <div class="request-link-entry" style="display: grid; grid-template-columns: 1fr 2fr auto; gap: 15px; margin-bottom: 12px; align-items: end;">
+                            <div class="request-link-entry">
                                 <div class="form-group">
                                     <label>Platform</label>
                                     <select class="request-link-platform">
@@ -665,7 +698,7 @@
                                     <label>URL</label>
                                     <input type="url" class="request-link-url" placeholder="https://...">
                                 </div>
-                                <button type="button" class="btn-secondary request-link-remove" style="margin-bottom: 2px;">Remove</button>
+                                <button type="button" class="btn-secondary request-link-remove">Remove</button>
                             </div>
                         </template>
                         <div class="request-checkbox-grid">
@@ -712,8 +745,8 @@
     <datalist id="request-major-options"></datalist>
     <datalist id="request-degree-options"></datalist>
     <datalist id="request-occupation-options"></datalist>
-    <script src="secrets.js"></script>
-    <script src="config.js"></script>
-    <script src="app.js"></script>
+    <script src="secrets.js?v=3"></script>
+    <script src="config.js?v=3"></script>
+    <script src="app.js?v=3"></script>
 </body>
 </html>

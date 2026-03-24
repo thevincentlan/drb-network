@@ -1,4 +1,4 @@
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbzW-MV2nVXn-96vggcO78oLifVn6oPIYHP63NA9a_gdyODhHIBpdpJSgqUNtsqxHGqIjg/exec';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyFpz59YWg-r54JLA9zHGmiesc9Al2rxrpmnzn1feuO5gAEaYQftA9rvaMzSM6rZOWM2A/exec';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CONFIG_ADMIN_PASSWORD : null;
 
@@ -43,6 +43,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let geocodeCache = {};
         let contactPreferences = {};
         let greekAffiliations = {};
+        let featuredAlumniIds = [];
+        const FEATURED_ALUMNI_STORAGE_KEY = 'drb-featured-alumni';
         const REQUEST_MILITARY_BRANCH_OPTIONS = ['Air Force', 'Army', 'Coast Guard', 'Marine Corps', 'Navy', 'National Guard', 'Space Force'];
         const REQUEST_STATE_OPTIONS = [...new Set(Object.values(stateAbbreviationMap))].sort((a, b) => a.localeCompare(b));
         const REQUEST_UNIVERSITY_OPTIONS = [...new Set(
@@ -66,8 +68,30 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             'MD',
             'PharmD'
         ])].sort((a, b) => a.localeCompare(b));
-        const REQUEST_GREEK_OPTIONS = [...new Set(Object.values(greekNormalizationMap))].sort((a, b) => a.localeCompare(b));
+        const REQUEST_GREEK_OPTIONS = [
+            'Alpha Phi Alpha',
+            'Kappa Alpha Psi',
+            'Omega Psi Phi',
+            'Phi Beta Sigma',
+            'Iota Phi Theta'
+        ];
         const REQUEST_OCCUPATION_OPTIONS = [...new Set(Object.values(occupationNormalizationMap))].sort((a, b) => a.localeCompare(b));
+        const NORMALIZED_HBCU_LIST = [...new Set(
+            hbcuList
+                .map(value => normalizeName(value, universityNormalizationMap))
+                .filter(Boolean)
+        )];
+        const NORMALIZED_IVY_LEAGUE_LIST = [...new Set(
+            ivyLeagueList
+                .map(value => normalizeName(value, universityNormalizationMap))
+                .filter(Boolean)
+        )];
+        const HBCU_UNIVERSITY_SET = new Set(NORMALIZED_HBCU_LIST);
+        const IVY_LEAGUE_UNIVERSITY_SET = new Set(NORMALIZED_IVY_LEAGUE_LIST);
+        const HBCU_FILTER_LABEL = 'HBCUs';
+        const IVY_LEAGUE_FILTER_LABEL = 'Ivy League';
+        const MEDICAL_SCHOOL_FILTER_LABEL = 'Medical School';
+        const LAW_SCHOOL_FILTER_LABEL = 'Law School';
 
         // Simple string hash to obscure URLs in face_coords.json and decouple from row IDs
         function generateFaceKey(url) {
@@ -83,6 +107,30 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
         function getAlumnusKey(firstName, lastName, gradYear) {
             return `${firstName || ''}-${lastName || ''}-${gradYear || ''}`.toLowerCase().replace(/\s+/g, '');
+        }
+
+        function getContactLinkLabel(link) {
+            const type = canonicalizeText(link?.type || '').toLowerCase();
+            if (type === 'linkedin') return 'LinkedIn';
+            return link?.display || link?.type || link?.url || '';
+        }
+
+        function isMedicalSchoolDegree(degree) {
+            const normalized = canonicalizeText(degree).toLowerCase();
+            return normalized === 'md'
+                || normalized === 'm.d.'
+                || normalized === 'doctor of medicine'
+                || normalized === 'pharmd'
+                || normalized === 'pharm.d.'
+                || normalized === 'doctor of pharmacy';
+        }
+
+        function isLawSchoolDegree(degree) {
+            const normalized = canonicalizeText(degree).toLowerCase();
+            return normalized === 'jd'
+                || normalized === 'j.d.'
+                || normalized === 'juris doctor'
+                || normalized === 'doctor of jurisprudence';
         }
 
         async function loadContactPreferences() {
@@ -188,6 +236,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             return normalizeName(canonicalValue, greekNormalizationMap);
         }
 
+        function coerceOptionalBoolean(value) {
+            if (typeof value === 'boolean') return value;
+            if (typeof value === 'number') return value !== 0;
+
+            const normalizedValue = canonicalizeText(value).toLowerCase();
+            if (!normalizedValue) return null;
+            if (['true', 't', '1', 'yes', 'y'].includes(normalizedValue)) return true;
+            if (['false', 'f', '0', 'no', 'n'].includes(normalizedValue)) return false;
+            return null;
+        }
+
         function normalizeAwardName(value) {
             const canonicalValue = canonicalizeText(value);
             if (!canonicalValue || invalidAwardPatterns.some(pattern => pattern.test(canonicalValue))) {
@@ -287,6 +346,20 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const industries = getCheckedValues('#industry-options-container .industry-sub-checkbox:checked');
             const military = getCheckedValues('#military-options-container input:checked');
             const locations = getCheckedValues('#location-options-container input:checked');
+            const universityTags = getCheckedValues('#university-tag-options-container input:checked');
+            const selectedUniversityTagGroups = new Set();
+            const selectedUniversityTagSchools = [];
+
+            universityTags.forEach(value => {
+                if (value.includes('::')) {
+                    const [groupLabel, university] = value.split('::');
+                    if (groupLabel && university) {
+                        selectedUniversityTagSchools.push({ groupLabel, university });
+                    }
+                    return;
+                }
+                selectedUniversityTagGroups.add(value);
+            });
 
             const criteria = [];
 
@@ -325,6 +398,27 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 });
             }
 
+            if (universityTags.size > 0) {
+                criteria.push({
+                    key: 'universityTags',
+                    matches: alum =>
+                        (selectedUniversityTagGroups.has(HBCU_FILTER_LABEL) && alum.hasHBCU) ||
+                        (selectedUniversityTagGroups.has(IVY_LEAGUE_FILTER_LABEL) && alum.hasIvyLeague) ||
+                        (selectedUniversityTagGroups.has(MEDICAL_SCHOOL_FILTER_LABEL) && alum.hasMedicalSchool) ||
+                        (selectedUniversityTagGroups.has(LAW_SCHOOL_FILTER_LABEL) && alum.hasLawSchool) ||
+                        selectedUniversityTagSchools.some(({ groupLabel, university }) =>
+                            alum.educationHistory.some(edu => {
+                                if (edu.university !== university) return false;
+                                if (groupLabel === HBCU_FILTER_LABEL) return HBCU_UNIVERSITY_SET.has(edu.university);
+                                if (groupLabel === IVY_LEAGUE_FILTER_LABEL) return IVY_LEAGUE_UNIVERSITY_SET.has(edu.university);
+                                if (groupLabel === MEDICAL_SCHOOL_FILTER_LABEL) return edu.degrees.some(isMedicalSchoolDegree);
+                                if (groupLabel === LAW_SCHOOL_FILTER_LABEL) return edu.degrees.some(isLawSchoolDegree);
+                                return false;
+                            })
+                        )
+                });
+            }
+
             if (majors.size > 0) {
                 criteria.push({
                     key: 'majors',
@@ -346,7 +440,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 });
             }
 
-            if (isFilterChecked('education-master-filter') && universities.size === 0 && majors.size === 0 && degrees.size === 0 && greek.size === 0) {
+            if (isFilterChecked('education-master-filter') && universities.size === 0 && universityTags.size === 0 && majors.size === 0 && degrees.size === 0 && greek.size === 0) {
                 criteria.push({
                     key: 'educationPresence',
                     matches: alum => alum.hasEducation || !!alum.greekAffiliation
@@ -510,7 +604,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                             if (alumnus.email) { contactHtml += `<li><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z"/></svg><div><a href="mailto:${escapeHTML(alumnus.email)}">${escapeHTML(alumnus.email)}</a></div></li>`; }
                             if (alumnus.phone) { contactHtml += `<li><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.02.74-.25 1.02l-2.2 2.2z"/></svg><div>${escapeHTML(alumnus.phone)}</div></li>`; }
                             if (alumnus.instagramUrl) { contactHtml += `<li>${socialIcons.instagram}<div><a href="${escapeHTML(alumnus.instagramUrl)}" target="_blank" rel="noopener noreferrer">${escapeHTML(alumnus.instagramHandle)}</a></div></li>`; }
-                            alumnus.socialMedia.forEach(social => { const icon = socialIcons[social.type.toLowerCase()] || socialIcons.social; contactHtml += `<li>${icon}<div><a href="${escapeHTML(social.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(social.display)}</a></div></li>` });
+                            alumnus.socialMedia.forEach(social => { const icon = socialIcons[social.type.toLowerCase()] || socialIcons.social; contactHtml += `<li>${icon}<div><a href="${escapeHTML(social.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(getContactLinkLabel(social))}</a></div></li>` });
                             alumnus.websites.forEach(site => { contactHtml += `<li>${socialIcons.website}<div><a href="${escapeHTML(site.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(site.display)} (${escapeHTML(site.type)})</a></div></li>` });
                             contactHtml += '</ul>';
                             if (alumnus.instagramUrl) {
@@ -732,7 +826,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             }
             alumnus.socialMedia.forEach(social => {
                 const icon = socialIcons[social.type.toLowerCase()] || socialIcons.social;
-                contactHtml += `<li>${icon}<a href="${escapeHTML(social.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(social.display)}</a></li>`
+                contactHtml += `<li>${icon}<a href="${escapeHTML(social.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(getContactLinkLabel(social))}</a></li>`
             });
             alumnus.websites.forEach(site => {
                 contactHtml += `<li>${socialIcons.website}<a href="${escapeHTML(site.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(site.display)} (${escapeHTML(site.type)})</a></li>`
@@ -852,27 +946,117 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             }
         }
 
-        // --- Unified Directory View (Formerly Dashboard/Grid) ---
-        function renderDirectory(filteredAlumni) {
-            const isFiltered = currentSearchQuery || filteredAlumni.length < allAlumniData.length;
-            
-            // 1. Interactive Stats
-            const now = new Date();
+        function getDaysUntilAnniversary(now = new Date()) {
             const currentYear = now.getFullYear();
             let anniversaryDate = new Date(currentYear, 8, 21); // September is month 8 (0-indexed)
             if (now > anniversaryDate) {
                 anniversaryDate = new Date(currentYear + 1, 8, 21);
             }
-            const diffDays = Math.ceil(Math.abs(anniversaryDate - now) / (1000 * 60 * 60 * 24));
-            animateCounter('stat-anniversary', diffDays);
+            return Math.ceil(Math.abs(anniversaryDate - now) / (1000 * 60 * 60 * 24));
+        }
 
+        function updateDashboardStats(filteredAlumni) {
             const cities = new Set(filteredAlumni.map(a => a.city).filter(Boolean));
             const industries = new Set(filteredAlumni.flatMap(a => a.industries).filter(Boolean));
             const classYears = new Set(filteredAlumni.map(a => a.gradYear).filter(Boolean));
-            animateCounter('stat-total', filteredAlumni.length);
-            animateCounter('stat-cities', cities.size);
-            animateCounter('stat-industries', industries.size);
-            animateCounter('stat-classes', classYears.size);
+            const statTargets = [
+                ['stat-anniversary', getDaysUntilAnniversary()],
+                ['stat-total', filteredAlumni.length],
+                ['stat-cities', cities.size],
+                ['stat-industries', industries.size],
+                ['stat-classes', classYears.size]
+            ];
+
+            requestAnimationFrame(() => {
+                statTargets.forEach(([id]) => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = '0';
+                });
+                statTargets.forEach(([id, target]) => animateCounter(id, target));
+            });
+        }
+
+        function getFeaturedAlumniDayKey(now = new Date()) {
+            const year = now.getFullYear();
+            const month = String(now.getMonth() + 1).padStart(2, '0');
+            const day = String(now.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        }
+
+        function getFeaturedAlumniFingerprint(alumni) {
+            return alumni
+                .map(a => String(a.id))
+                .sort()
+                .join('|');
+        }
+
+        function loadStoredFeaturedAlumni(fingerprint) {
+            try {
+                const raw = window.localStorage.getItem(FEATURED_ALUMNI_STORAGE_KEY);
+                if (!raw) return [];
+                const parsed = JSON.parse(raw);
+                if (!parsed || parsed.dayKey !== getFeaturedAlumniDayKey() || parsed.fingerprint !== fingerprint || !Array.isArray(parsed.ids)) {
+                    return [];
+                }
+                return parsed.ids;
+            } catch (error) {
+                console.warn('Failed to read featured alumni cache:', error);
+                return [];
+            }
+        }
+
+        function storeFeaturedAlumni(ids, fingerprint) {
+            try {
+                window.localStorage.setItem(FEATURED_ALUMNI_STORAGE_KEY, JSON.stringify({
+                    dayKey: getFeaturedAlumniDayKey(),
+                    fingerprint,
+                    ids
+                }));
+            } catch (error) {
+                console.warn('Failed to store featured alumni cache:', error);
+            }
+        }
+
+        function getFeaturedAlumniSelection(alumni) {
+            const withPhotos = alumni.filter(a => a.hasRealPhoto);
+            if (withPhotos.length === 0) return [];
+
+            const fingerprint = getFeaturedAlumniFingerprint(withPhotos);
+            const storedIds = loadStoredFeaturedAlumni(fingerprint);
+            if (storedIds.length > 0) {
+                featuredAlumniIds = storedIds;
+            }
+
+            const availableIds = new Set(withPhotos.map(a => a.id));
+            const cachedFeatured = featuredAlumniIds
+                .map(id => withPhotos.find(a => a.id === id))
+                .filter(Boolean);
+
+            const cacheStillValid = cachedFeatured.length === featuredAlumniIds.length
+                && featuredAlumniIds.every(id => availableIds.has(id));
+
+            if (cacheStillValid && cachedFeatured.length > 0) {
+                return cachedFeatured;
+            }
+
+            const pool = [...withPhotos];
+            const featured = [];
+            for (let i = 0; i < Math.min(3, pool.length); i++) {
+                const idx = Math.floor(Math.random() * pool.length);
+                featured.push(pool.splice(idx, 1)[0]);
+            }
+
+            featuredAlumniIds = featured.map(a => a.id);
+            storeFeaturedAlumni(featuredAlumniIds, fingerprint);
+            return featured;
+        }
+
+        // --- Unified Directory View (Formerly Dashboard/Grid) ---
+        function renderDirectory(filteredAlumni) {
+            const isFiltered = currentSearchQuery || filteredAlumni.length < allAlumniData.length;
+            
+            // 1. Interactive Stats
+            updateDashboardStats(filteredAlumni);
 
             // 2. Featured Carousel (Hide if searching/filtering to save space)
             const featuredSection = document.getElementById('featured-section');
@@ -882,13 +1066,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 featuredSection.style.display = 'block';
                 const carousel = document.getElementById('featured-carousel');
                 if (carousel) {
-                    const withPhotos = filteredAlumni.filter(a => a.hasRealPhoto);
-                    const featured = [];
-                    const pool = [...withPhotos];
-                    for (let i = 0; i < Math.min(3, pool.length); i++) {
-                        const idx = Math.floor(Math.random() * pool.length);
-                        featured.push(pool.splice(idx, 1)[0]);
-                    }
+                    const featured = getFeaturedAlumniSelection(filteredAlumni);
                     carousel.innerHTML = featured.map(a => {
                         const hasSwap = !!(a.rawPhotoUrl && a.drbPhotoUrl);
                         const featuredFrontImage = a.rawPhotoUrl || a.drbPhotoUrl;
@@ -1241,6 +1419,144 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 showMainView();
             }
         }
+
+        function buildSpecialUniversityFilterGroups(alumni) {
+            const groups = {
+                [HBCU_FILTER_LABEL]: new Set(),
+                [IVY_LEAGUE_FILTER_LABEL]: new Set(),
+                [MEDICAL_SCHOOL_FILTER_LABEL]: new Set(),
+                [LAW_SCHOOL_FILTER_LABEL]: new Set()
+            };
+
+            alumni.forEach(alum => {
+                alum.educationHistory.forEach(edu => {
+                    if (!edu.university) return;
+                    if (HBCU_UNIVERSITY_SET.has(edu.university)) groups[HBCU_FILTER_LABEL].add(edu.university);
+                    if (IVY_LEAGUE_UNIVERSITY_SET.has(edu.university)) groups[IVY_LEAGUE_FILTER_LABEL].add(edu.university);
+                    if (edu.degrees.some(isMedicalSchoolDegree)) groups[MEDICAL_SCHOOL_FILTER_LABEL].add(edu.university);
+                    if (edu.degrees.some(isLawSchoolDegree)) groups[LAW_SCHOOL_FILTER_LABEL].add(edu.university);
+                });
+            });
+
+            return Object.fromEntries(
+                Object.entries(groups)
+                    .map(([label, values]) => [label, Array.from(values).sort()])
+                    .filter(([, values]) => values.length > 0)
+            );
+        }
+
+        function populateSpecialUniversityFilters(container, groups) {
+            if (!container) return;
+            container.innerHTML = '';
+
+            Object.entries(groups).forEach(([label, universities]) => {
+                const groupDiv = document.createElement('div');
+                groupDiv.className = 'university-category-group special-university-group';
+
+                const masterCheckboxId = `university-special-${label.replace(/\W/g, '-')}`;
+                groupDiv.innerHTML = `
+                    <label class="sub-filter-group master-university master-filter-control" for="${masterCheckboxId}" style="display:flex; width:100%; margin:0; cursor:pointer; font-weight:600;">
+                        <input type="checkbox" id="${masterCheckboxId}" value="${label}" class="university-special-master">
+                        <span class="custom-checkbox"></span>
+                        <span class="filter-label-text">${label}</span>
+                        <span class="arrow"></span>
+                    </label>
+                `;
+
+                const optionsContainer = document.createElement('div');
+                optionsContainer.className = 'options-container university-special-options';
+
+                universities.forEach(university => {
+                    const subCheckboxId = `university-special-${label.replace(/\W/g, '-')}-${university.replace(/\W/g, '-')}`;
+                    const subLabel = document.createElement('label');
+                    subLabel.className = 'sub-filter-group master-filter-control';
+                    subLabel.htmlFor = subCheckboxId;
+                    subLabel.style.cssText = 'display:flex; width:100%; margin:0; cursor:pointer; font-weight:400; font-size:0.85em; color:var(--text-secondary);';
+                    subLabel.innerHTML = `
+                        <input type="checkbox" id="${subCheckboxId}" value="${label}::${university}" class="university-special-checkbox">
+                        <span class="custom-checkbox"></span>
+                        <span class="filter-label-text">${university}</span>
+                    `;
+                    optionsContainer.appendChild(subLabel);
+                });
+
+                groupDiv.appendChild(optionsContainer);
+                container.appendChild(groupDiv);
+
+                const masterCheckbox = groupDiv.querySelector('.university-special-master');
+                const subCheckboxes = Array.from(groupDiv.querySelectorAll('.university-special-checkbox'));
+
+                masterCheckbox?.addEventListener('change', () => {
+                    subCheckboxes.forEach(checkbox => {
+                        checkbox.checked = masterCheckbox.checked;
+                    });
+                    syncFilterHierarchy('university');
+                    renderProfiles();
+                });
+
+                subCheckboxes.forEach(checkbox => {
+                    checkbox.addEventListener('change', () => {
+                        masterCheckbox.checked = subCheckboxes.every(sub => sub.checked);
+                        masterCheckbox.indeterminate = !masterCheckbox.checked && subCheckboxes.some(sub => sub.checked);
+                        syncFilterHierarchy('university');
+                        renderProfiles();
+                    });
+                });
+            });
+        }
+
+        function bindFilterSidebarInteractions(root = document) {
+            root.querySelectorAll('.master-filter-control').forEach(control => {
+                if (control.dataset.bound === 'true') return;
+
+                const checkbox = control.querySelector('input[type="checkbox"]');
+                const labelText = control.querySelector('.filter-label-text');
+
+                const toggleExpansion = () => {
+                    const container = control.parentElement.querySelector(':scope > .options-container');
+                    control.classList.toggle('expanded');
+                    if (container) container.classList.toggle('expanded');
+                };
+
+                if (labelText) {
+                    labelText.addEventListener('click', (e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        toggleExpansion();
+                    });
+                }
+
+                control.querySelector('.arrow')?.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    toggleExpansion();
+                });
+
+                checkbox?.addEventListener('change', () => {
+                    const isChecked = checkbox.checked;
+                    if (isChecked && !control.classList.contains('expanded')) {
+                        toggleExpansion();
+                    }
+                    if (!isChecked) {
+                        if (control.classList.contains('expanded')) toggleExpansion();
+                        control.parentElement.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                            if (cb !== checkbox) cb.checked = false;
+                        });
+                        control.parentElement.querySelectorAll('.options-container').forEach(c => c.classList.remove('expanded'));
+                        control.parentElement.querySelectorAll('.master-filter-control').forEach(c => c.classList.remove('expanded'));
+                    }
+                    renderProfiles();
+                });
+
+                control.dataset.bound = 'true';
+            });
+
+            root.querySelectorAll('.options-container').forEach(container => {
+                if (container.dataset.bound === 'true') return;
+                container.addEventListener('click', (event) => { event.stopPropagation(); });
+                container.dataset.bound = 'true';
+            });
+        }
         
         function populateHierarchicalFilter(container, items, itemType) {
             if (!container) return;
@@ -1320,10 +1636,14 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const mappings = {
                 'university': {
                     subMaster: 'university-sub-filter',
-                    subSelectors: ['#university-options-container input:checked'],
+                    subSelectors: [
+                        '#university-options-container input:checked',
+                        '#university-tag-options-container input:checked'
+                    ],
                     rootMaster: 'education-master-filter',
                     rootSelectors: [
                         '#university-options-container input:checked',
+                        '#university-tag-options-container input:checked',
                         '#major-options-container input:checked',
                         '#degree-options-container input:checked',
                         '#greek-options-container input:checked'
@@ -1453,9 +1773,11 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const requestAccessCloseBtn = document.getElementById('request-access-close-btn');
             const requestAccessCancelBtn = document.getElementById('request-access-cancel-btn');
             const requestEmailInput = document.getElementById('request-email');
+            const defaultLoginDescription = "Use the email tied to your profile and we'll send a quick code to sign you in.";
             const requestStateSelect = document.getElementById('request-state');
             const requestMilitaryBranchSelect = document.getElementById('request-military-branch');
-            const requestGreekSelect = document.getElementById('request-greek');
+            const requestGreekInput = document.getElementById('request-greek');
+            const requestGreekOptions = document.getElementById('request-greek-options');
             const addEducationEntryBtn = document.getElementById('add-education-entry-btn');
             const requestEducationEntries = document.getElementById('request-education-entries');
             const requestEducationEntryTemplate = document.getElementById('request-education-entry-template');
@@ -1467,6 +1789,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const requestPhotoDrbInput = document.getElementById('request-photo-drb');
             const requestPhotoCurrentPreview = document.getElementById('request-photo-current-preview');
             const requestPhotoDrbPreview = document.getElementById('request-photo-drb-preview');
+            const requestLocationResults = document.getElementById('request-location-results');
             const defaultRequestAccessNoteText = requestAccessNote ? requestAccessNote.textContent : '';
             const requestShareNone = document.getElementById('request-share-none');
             const requestShareEmail = document.getElementById('request-share-email');
@@ -1607,6 +1930,119 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 });
             };
 
+            const toTitleCase = value => String(value || '')
+                .split(/\s+/)
+                .filter(Boolean)
+                .map(part => part.length <= 3 && part === part.toUpperCase()
+                    ? part
+                    : part.charAt(0).toUpperCase() + part.slice(1))
+                .join(' ');
+
+            const parseLocationDisplayParts = display => {
+                const parts = String(display || '')
+                    .split(',')
+                    .map(part => part.trim())
+                    .filter(Boolean);
+
+                if (!parts.length) {
+                    return { city: '', state: '' };
+                }
+
+                if (parts.length === 1) {
+                    return { city: parts[0], state: '' };
+                }
+
+                return {
+                    city: parts.slice(0, -1).join(', '),
+                    state: parts[parts.length - 1]
+                };
+            };
+
+            const getRequestUniversitySuggestionList = query => {
+                const normalizedQuery = query.trim().toLowerCase();
+                if (normalizedQuery.length < 2) return [];
+                const optionValues = requestUniversityOptions
+                    ? Array.from(requestUniversityOptions.querySelectorAll('option')).map(option => option.value)
+                    : [];
+                const suggestionPool = [...new Set([...REQUEST_UNIVERSITY_OPTIONS, ...optionValues].filter(Boolean))];
+
+                return suggestionPool
+                    .filter(value => value.toLowerCase().includes(normalizedQuery))
+                    .sort((a, b) => {
+                        const aStarts = a.toLowerCase().startsWith(normalizedQuery);
+                        const bStarts = b.toLowerCase().startsWith(normalizedQuery);
+                        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+                        return a.localeCompare(b);
+                    })
+                    .slice(0, 8);
+            };
+
+            const getLocalLocationSuggestionList = query => {
+                const normalizedQuery = query.trim().toLowerCase();
+                if (normalizedQuery.length < 2) return [];
+
+                const localLocations = new Set();
+                allAlumniData.forEach(alumnus => {
+                    const display = [alumnus.city, alumnus.state].filter(Boolean).join(', ');
+                    if (display) localLocations.add(display);
+                });
+                Object.keys(CITY_COORDS || {}).forEach(cityKey => {
+                    localLocations.add(toTitleCase(cityKey));
+                });
+
+                return Array.from(localLocations)
+                    .filter(location => location.toLowerCase().includes(normalizedQuery))
+                    .sort((a, b) => {
+                        const aStarts = a.toLowerCase().startsWith(normalizedQuery);
+                        const bStarts = b.toLowerCase().startsWith(normalizedQuery);
+                        if (aStarts !== bStarts) return aStarts ? -1 : 1;
+                        return a.localeCompare(b);
+                    })
+                    .slice(0, 6);
+            };
+
+            const setupLocationAutocomplete = (input, resultsEl) => {
+                if (!input || !resultsEl || input.dataset.autocompleteBound === 'true') return;
+                let debounce = null;
+
+                const clearResults = () => {
+                    resultsEl.innerHTML = '';
+                };
+
+                input.addEventListener('input', () => {
+                    clearTimeout(debounce);
+                    const query = input.value.trim();
+                    if (query.length < 2) {
+                        clearResults();
+                        return;
+                    }
+
+                    debounce = setTimeout(() => {
+                        const matches = getLocalLocationSuggestionList(query);
+                        clearResults();
+                        matches.forEach(match => {
+                            const button = document.createElement('button');
+                            button.type = 'button';
+                            button.className = 'autocomplete-result-btn';
+                            button.textContent = match;
+                            button.addEventListener('click', () => {
+                                input.value = match;
+                                clearResults();
+                            });
+                            resultsEl.appendChild(button);
+                        });
+                    }, 180);
+                });
+
+                document.addEventListener('click', event => {
+                    if (!input.contains(event.target) && !resultsEl.contains(event.target)) {
+                        clearResults();
+                    }
+                });
+
+                input.dataset.autocompleteBound = 'true';
+            };
+
             const updateEducationEntryControls = () => {
                 if (!requestEducationEntries) return;
                 const entries = Array.from(requestEducationEntries.querySelectorAll('.request-education-entry'));
@@ -1633,25 +2069,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     clearTimeout(uniDebounce);
                     const q = uniInput.value.trim();
                     if (q.length < 2) { uniSuggestions.innerHTML = ''; return; }
-                    uniDebounce = setTimeout(async () => {
-                        try {
-                            const res = await fetch(`https://universities.hipolabs.com/search?name=${encodeURIComponent(q)}&country=United+States&limit=8`);
-                            const results = await res.json();
-                            uniSuggestions.innerHTML = '';
-                            const seen = new Set();
-                            results.slice(0, 8).forEach(u => {
-                                const name = u.name;
-                                if (!name || seen.has(name)) return;
-                                seen.add(name);
-                                const li = document.createElement('li');
-                                li.textContent = name;
-                                li.addEventListener('click', () => {
-                                    uniInput.value = name;
-                                    uniSuggestions.innerHTML = '';
-                                });
-                                uniSuggestions.appendChild(li);
+                    uniDebounce = setTimeout(() => {
+                        uniSuggestions.innerHTML = '';
+                        getRequestUniversitySuggestionList(q).forEach(name => {
+                            const li = document.createElement('li');
+                            li.textContent = name;
+                            li.addEventListener('click', () => {
+                                uniInput.value = name;
+                                uniSuggestions.innerHTML = '';
                             });
-                        } catch (err) { console.warn('University search error:', err); }
+                            uniSuggestions.appendChild(li);
+                        });
                     }, 300);
                 });
                 document.addEventListener('click', (e) => {
@@ -1848,7 +2276,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 resetEducationEntries();
                 if (requestStateSelect) requestStateSelect.value = '';
                 if (requestMilitaryBranchSelect) requestMilitaryBranchSelect.value = '';
-                if (requestGreekSelect) requestGreekSelect.value = '';
+                if (requestGreekInput) requestGreekInput.value = '';
             };
 
             const syncRequestShareControls = changedCheckbox => {
@@ -1869,7 +2297,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
 
             populateRequestSelect(requestMilitaryBranchSelect, REQUEST_MILITARY_BRANCH_OPTIONS, 'Select a branch');
-            populateRequestSelect(requestGreekSelect, REQUEST_GREEK_OPTIONS, 'Select an affiliation');
+            populateRequestDatalist(requestGreekOptions, REQUEST_GREEK_OPTIONS);
             populateRequestDatalist(requestUniversityOptions, REQUEST_UNIVERSITY_OPTIONS);
             populateRequestDatalist(requestMajorOptions, REQUEST_MAJOR_OPTIONS);
             populateRequestDatalist(requestDegreeOptions, REQUEST_DEGREE_OPTIONS);
@@ -2133,7 +2561,12 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 const awardRows = Array.isArray(alum.alumni_awards) ? alum.alumni_awards : [];
                 const leadershipRows = Array.isArray(alum.alumni_leadership) ? alum.alumni_leadership : [];
                 const alumnusKey = getAlumnusKey(alum.first_name, alum.last_name, alum.grad_year);
-                const consent = contactPreferences[alumnusKey] || { email: false, phone: false, social: false };
+                const fallbackConsent = contactPreferences[alumnusKey] || { email: false, phone: false, social: false };
+                const consent = {
+                    email: coerceOptionalBoolean(alum.share_email) ?? !!fallbackConsent.email,
+                    phone: coerceOptionalBoolean(alum.share_phone) ?? !!fallbackConsent.phone,
+                    social: coerceOptionalBoolean(alum.share_social) ?? !!fallbackConsent.social
+                };
                 const canViewPrivateContact = currentUserEmail === 'admin@drb.network' || (
                     alum.email &&
                     currentUserEmail &&
@@ -2178,7 +2611,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     tenure: alum.tenure,
                     favoriteStep: alum.favorite_step,
                     about: alum.about,
-                    greekAffiliation: normalizeGreekAffiliation(greekAffiliations[alumnusKey] || ''),
+                    greekAffiliation: normalizeGreekAffiliation(alum.greek_affiliation || greekAffiliations[alumnusKey] || ''),
                     email: visibleEmail,
                     phone: visiblePhone,
                     rawEmail: alum.email,
@@ -2232,6 +2665,10 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
                 record.universities = [...new Set(record.educationHistory.map(e => e.university).filter(Boolean))];
                 record.majors = [...new Set(record.educationHistory.flatMap(e => e.majors.map(m => m.normalized)).filter(Boolean))];
+                record.hasHBCU = record.universities.some(university => HBCU_UNIVERSITY_SET.has(university));
+                record.hasIvyLeague = record.universities.some(university => IVY_LEAGUE_UNIVERSITY_SET.has(university));
+                record.hasMedicalSchool = record.educationHistory.some(edu => edu.degrees.some(isMedicalSchoolDegree));
+                record.hasLawSchool = record.educationHistory.some(edu => edu.degrees.some(isLawSchoolDegree));
 
                 // Removed early return
                 if (record.rawEmail) allowedEmails.add(record.rawEmail.toLowerCase().trim());
@@ -2245,9 +2682,6 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 record.educationHistory.forEach(edu => {
                    if (edu.university) {
                        sets.universities[edu.university] = universityToStateMap[edu.university] || 'Other';
-                       if (hbcuList.includes(edu.university)) {
-                           sets.universities['HBCU'] = 'Other';
-                       }
                    }
                    edu.majors.forEach(m => {
                        if (m.normalized) sets.majors.add(m.normalized);
@@ -2294,10 +2728,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             populateFilter(document.getElementById('military-options-container'), sets.military, 'military');
             populateFilter(document.getElementById('greek-options-container'), sets.greek, 'greek');
             populateHierarchicalFilter(document.getElementById('university-options-container'), sets.universities, 'university');
+            populateSpecialUniversityFilters(
+                document.getElementById('university-tag-options-container'),
+                buildSpecialUniversityFilterGroups(allAlumniData)
+            );
             populateHierarchicalFilter(document.getElementById('major-options-container'), Object.fromEntries([...sets.majors].map(m => [m, majorToCategory[m] || 'Other'])), 'major');
             populateHierarchicalFilter(document.getElementById('industry-options-container'), sets.industries, 'industry');
             populateFilter(document.getElementById('degree-options-container'), sets.degreeLevels, 'degree', customDegreeSort);
             populateFilter(document.getElementById('location-options-container'), sets.locations, 'location');
+            bindFilterSidebarInteractions(document.getElementById('filter-panel'));
             
             window.addEventListener('hashchange', router);
             window.addEventListener('resize', renderProfiles);
@@ -2328,13 +2767,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             });
 
             function showLoginScreen() {
-                 emailStep.style.display = 'block';
-                 otpStep.style.display = 'none';
-                 document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure access code.';
-                 loginEmailInput.value = '';
-                 loginMessage.textContent = '';
-                 if (verifyBtn) verifyBtn.disabled = false;
-                 if (loginBtn) loginBtn.disabled = false;
+                emailStep.style.display = 'grid';
+                otpStep.style.display = 'none';
+                document.getElementById('login-description').textContent = defaultLoginDescription;
+                loginEmailInput.value = '';
+                loginOtpInput.value = '';
+                loginMessage.textContent = '';
+                otpMessage.textContent = '';
+                loginMessage.classList.remove('error');
+                otpMessage.classList.remove('error');
+                if (verifyBtn) verifyBtn.disabled = false;
+                if (loginBtn) loginBtn.disabled = false;
             }
 
             // Check for existing session on load
@@ -2355,7 +2798,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     if (!rawInput) return;
 
                     loginBtn.disabled = true;
-                    loginMessage.textContent = 'Checking access...';
+                    loginMessage.textContent = 'Checking your access...';
                     loginMessage.classList.remove('error');
 
                     // Admin bypass (Local Development Only)
@@ -2378,7 +2821,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         const normalizedError = String(error.message || '').toLowerCase();
                         const isNotApprovedError = normalizedError === 'user not found' || normalizedError.includes('signups not allowed for otp');
                         loginMessage.textContent = isNotApprovedError
-                            ? 'This email is not approved for login yet. Use Request Alumni Account to submit your details for review.'
+                            ? "We couldn't find an approved account for this email yet. You can request access below and we'll take a look."
                             : 'Error: ' + error.message;
                         loginMessage.classList.add('error');
                         loginBtn.disabled = false;
@@ -2389,9 +2832,9 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     } else {
                         currentUserEmail = rawInput;
                         emailStep.style.display = 'none';
-                        otpStep.style.display = 'block';
-                        document.getElementById('login-description').textContent = 'Please enter the code we just sent to ' + currentUserEmail + '.';
-                        otpMessage.textContent = 'Code sent successfully!';
+                        otpStep.style.display = 'grid';
+                        document.getElementById('login-description').textContent = 'Enter the code we just sent to ' + currentUserEmail + '.';
+                        otpMessage.textContent = 'Check your inbox for your sign-in code.';
                         otpMessage.classList.remove('error');
                     }
                 });
@@ -2401,12 +2844,12 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 verifyBtn.addEventListener('click', async () => {
                     const codeInput = loginOtpInput.value.trim();
                     if (!codeInput || codeInput.length < 6) {
-                        otpMessage.textContent = 'Please enter the full access code.';
+                        otpMessage.textContent = 'Enter the full code from your email.';
                         otpMessage.classList.add('error');
                         return;
                     }
 
-                    otpMessage.textContent = 'Verifying and downloading securely...';
+                    otpMessage.textContent = 'Signing you in...';
                     otpMessage.classList.remove('error');
                     verifyBtn.disabled = true;
 
@@ -2417,7 +2860,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     });
 
                     if (error) {
-                        otpMessage.textContent = 'Invalid or expired code.';
+                        otpMessage.textContent = "That code didn't work. Try again or request a new one.";
                         otpMessage.classList.add('error');
                         verifyBtn.disabled = false;
                     }
@@ -2483,9 +2926,9 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     document.body.classList.remove('filters-visible');
                     allAlumniData = [];
                     if (profilesContainer) profilesContainer.innerHTML = '';
-                    document.getElementById('email-step').style.display = 'block';
+                    document.getElementById('email-step').style.display = 'grid';
                     document.getElementById('otp-step').style.display = 'none';
-                    document.getElementById('login-description').textContent = 'An email listed on your profile is strictly required to log in. We will send you a secure access code.';
+                    document.getElementById('login-description').textContent = defaultLoginDescription;
                     loginEmailInput.value = '';
                     loginMessage.textContent = '';
                 });
@@ -2515,7 +2958,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             const editStateHidden = document.getElementById('edit-state');
             let editingAlumnus = null;
 
-            // --- Location Auto-Suggest (Nominatim) ---
+            // --- Location Auto-Suggest (Local suggestions) ---
             let locationDebounce = null;
             if (editLocationInput) {
                 editLocationInput.addEventListener('input', () => {
@@ -2528,45 +2971,21 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         editLocationSuggestions.innerHTML = '';
                         return;
                     }
-                    locationDebounce = setTimeout(async () => {
-                        try {
-                            const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&addressdetails=1&limit=6&featuretype=city`, {
-                                headers: { 
-                                    'Accept-Language': 'en',
-                                    'User-Agent': 'DRBNetworkDatabase/1.0'
-                                }
+                    locationDebounce = setTimeout(() => {
+                        const results = getLocalLocationSuggestionList(query);
+                        editLocationSuggestions.innerHTML = '';
+                        results.forEach(location => {
+                            const li = document.createElement('li');
+                            li.textContent = location;
+                            li.addEventListener('click', () => {
+                                const parsed = parseLocationDisplayParts(location);
+                                editLocationInput.value = location;
+                                editCityHidden.value = parsed.city;
+                                editStateHidden.value = parsed.state;
+                                editLocationSuggestions.innerHTML = '';
                             });
-                            const results = await res.json();
-                            editLocationSuggestions.innerHTML = '';
-                            results.forEach(r => {
-                                const addr = r.address || {};
-                                const city = addr.city || addr.town || addr.village || addr.hamlet || '';
-                                const fullState = addr.state || '';
-                                const country = addr.country || '';
-                                // Abbreviate US states (reverse lookup)
-                                const stateAbbrev = Object.entries(stateAbbreviationMap).find(([, name]) => name.toLowerCase() === fullState.toLowerCase())?.[0] || '';
-                                const stateForSave = stateAbbrev || fullState;
-                                const isUS = (addr.country_code === 'us');
-                                // Dropdown shows full info
-                                const dropdownDisplay = [city, fullState, country].filter(Boolean).join(', ');
-                                // Saved display: "City, ST" for US, "City, CC" for international
-                                const savedDisplay = isUS
-                                    ? [city, stateAbbrev || fullState].filter(Boolean).join(', ')
-                                    : [city, (addr.country_code || '').toUpperCase()].filter(Boolean).join(', ');
-                                if (!dropdownDisplay) return;
-                                const li = document.createElement('li');
-                                li.textContent = dropdownDisplay;
-                                li.addEventListener('click', () => {
-                                    editLocationInput.value = savedDisplay;
-                                    editCityHidden.value = city;
-                                    editStateHidden.value = stateForSave;
-                                    editLocationSuggestions.innerHTML = '';
-                                });
-                                editLocationSuggestions.appendChild(li);
-                            });
-                        } catch (err) {
-                            console.warn('Location search error:', err);
-                        }
+                            editLocationSuggestions.appendChild(li);
+                        });
                     }, 400);
                 });
 
@@ -2619,26 +3038,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     clearTimeout(uniDebounce);
                     const q = uniInput.value.trim();
                     if (q.length < 2) { uniSuggestions.innerHTML = ''; return; }
-                    uniDebounce = setTimeout(async () => {
-                        try {
-                            const res = await fetch(`https://universities.hipolabs.com/search?name=${encodeURIComponent(q)}&limit=8`);
-                            const results = await res.json();
-                            uniSuggestions.innerHTML = '';
-                            // Deduplicate by name
-                            const seen = new Set();
-                            results.slice(0, 8).forEach(u => {
-                                const name = u.name;
-                                if (!name || seen.has(name)) return;
-                                seen.add(name);
-                                const li = document.createElement('li');
-                                li.textContent = name;
-                                li.addEventListener('click', () => {
-                                    uniInput.value = name;
-                                    uniSuggestions.innerHTML = '';
-                                });
-                                uniSuggestions.appendChild(li);
+                    uniDebounce = setTimeout(() => {
+                        uniSuggestions.innerHTML = '';
+                        getRequestUniversitySuggestionList(q).forEach(name => {
+                            const li = document.createElement('li');
+                            li.textContent = name;
+                            li.addEventListener('click', () => {
+                                uniInput.value = name;
+                                uniSuggestions.innerHTML = '';
                             });
-                        } catch (err) { console.warn('University search error:', err); }
+                            uniSuggestions.appendChild(li);
+                        });
                     }, 300);
                 });
                 // Close on outside click
@@ -3003,62 +3413,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 }
             });
 
-            let scrollTimeout;
-            window.addEventListener('scroll', () => {
-                if (document.body.classList.contains('filters-visible')) {
-                    clearTimeout(scrollTimeout);
-                    scrollTimeout = setTimeout(() => {
-                        if (window.scrollY > 150) { 
-                            document.body.classList.remove('filters-visible');
-                        }
-                    }, 100);
-                }
-            }, { passive: true });
-
-            document.querySelectorAll('.master-filter-control').forEach(control => {
-                const checkbox = control.querySelector('input[type="checkbox"]');
-                const labelText = control.querySelector('.filter-label-text');
-
-                const toggleExpansion = () => {
-                     const container = control.parentElement.querySelector(':scope > .options-container');
-                     control.classList.toggle('expanded');
-                     if(container) container.classList.toggle('expanded');
-                }
-
-                if(labelText) {
-                     labelText.addEventListener('click', (e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        toggleExpansion();
-                     });
-                }
-                
-                control.querySelector('.arrow')?.addEventListener('click', (e)=>{
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toggleExpansion();
-                });
-                
-                checkbox.addEventListener('change', () => {
-                    const isChecked = checkbox.checked;
-                     if(isChecked && !control.classList.contains('expanded')){
-                        toggleExpansion();
-                    }
-                    if (!isChecked) { 
-                        if(control.classList.contains('expanded')) toggleExpansion();
-                        control.parentElement.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                             if(cb !== checkbox) cb.checked = false; 
-                        });
-                        control.parentElement.querySelectorAll('.options-container').forEach(c => c.classList.remove('expanded'));
-                        control.parentElement.querySelectorAll('.master-filter-control').forEach(c => c.classList.remove('expanded'));
-                    }
-                    renderProfiles();
-                });
-            });
-
-             document.querySelectorAll('.options-container').forEach(container => {
-                container.addEventListener('click', (event) => { event.stopPropagation(); });
-            });
+            bindFilterSidebarInteractions(document.getElementById('filter-panel'));
 
             const sortByClassBtn = document.getElementById('sort-by-class-btn');
             const sortByAlphaBtn = document.getElementById('sort-by-alpha-btn');
