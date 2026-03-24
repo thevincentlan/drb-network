@@ -43,6 +43,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
         let geocodeCache = {};
         let contactPreferences = {};
         let greekAffiliations = {};
+        let lastDashboardStatsKey = '';
         let featuredAlumniIds = [];
         const FEATURED_ALUMNI_STORAGE_KEY = 'drb-featured-alumni';
         const REQUEST_MILITARY_BRANCH_OPTIONS = ['Air Force', 'Army', 'Coast Guard', 'Marine Corps', 'Navy', 'National Guard', 'Space Force'];
@@ -955,7 +956,26 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             return Math.ceil(Math.abs(anniversaryDate - now) / (1000 * 60 * 60 * 24));
         }
 
+        function setDashboardStatValues(statTargets) {
+            statTargets.forEach(([id, target]) => {
+                const el = document.getElementById(id);
+                if (el) el.textContent = String(target);
+            });
+        }
+
         function updateDashboardStats(filteredAlumni) {
+            if (allAlumniData.length === 0) {
+                setDashboardStatValues([
+                    ['stat-anniversary', 0],
+                    ['stat-total', 0],
+                    ['stat-cities', 0],
+                    ['stat-industries', 0],
+                    ['stat-classes', 0]
+                ]);
+                lastDashboardStatsKey = '';
+                return;
+            }
+
             const cities = new Set(filteredAlumni.map(a => a.city).filter(Boolean));
             const industries = new Set(filteredAlumni.flatMap(a => a.industries).filter(Boolean));
             const classYears = new Set(filteredAlumni.map(a => a.gradYear).filter(Boolean));
@@ -966,6 +986,14 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 ['stat-industries', industries.size],
                 ['stat-classes', classYears.size]
             ];
+            const statsKey = JSON.stringify(statTargets);
+
+            if (statsKey === lastDashboardStatsKey) {
+                setDashboardStatValues(statTargets);
+                return;
+            }
+
+            lastDashboardStatsKey = statsKey;
 
             requestAnimationFrame(() => {
                 statTargets.forEach(([id]) => {
