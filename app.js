@@ -1,6 +1,6 @@
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyFpz59YWg-r54JLA9zHGmiesc9Al2rxrpmnzn1feuO5gAEaYQftA9rvaMzSM6rZOWM2A/exec';
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
-const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CONFIG_ADMIN_PASSWORD : null;
+
 
 // --- This URL points to your Google Sheet ---
         const googleSheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTHcndXfYMgUm1eRG0IvoReaBxYowGhiay23WbY9JegVZkTlV1TI6_xFZY-GJq8UZEEMOdACI-2nOIb/pub?gid=370192004&single=true&output=csv';
@@ -493,7 +493,13 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 searchFiltered = data.filter(alum => {
                     const fullName = `${alum.firstName} ${alum.lastName}`.toLowerCase();
                     const reversed = `${alum.lastName} ${alum.firstName}`.toLowerCase();
-                    return fullName.includes(currentSearchQuery) || reversed.includes(currentSearchQuery);
+                    const occupation = (alum.occupation || '').toLowerCase();
+                    const city = (alum.city || '').toLowerCase();
+                    const state = (alum.state || '').toLowerCase();
+                    const universities = (alum.educationHistory || []).map(e => (e.university || '').toLowerCase()).join(' ');
+                    return fullName.includes(currentSearchQuery) || reversed.includes(currentSearchQuery) ||
+                        occupation.includes(currentSearchQuery) || city.includes(currentSearchQuery) ||
+                        state.includes(currentSearchQuery) || universities.includes(currentSearchQuery);
                 });
             }
 
@@ -517,6 +523,15 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             if (profilesContainer) profilesContainer.innerHTML = '';
             const filteredAlumni = filterAlumni(allAlumniData);
 
+            const resultsSummary = document.getElementById('results-summary');
+            if (resultsSummary) {
+                if (filteredAlumni.length < allAlumniData.length) {
+                    resultsSummary.textContent = `Showing ${filteredAlumni.length} of ${allAlumniData.length} alumni`;
+                    resultsSummary.style.display = 'block';
+                } else {
+                    resultsSummary.style.display = 'none';
+                }
+            }
 
             if (filteredAlumni.length === 0) {
                  if (profilesContainer) profilesContainer.innerHTML = '<p id="no-results-message">No profiles match the current filters.</p>';
@@ -750,7 +765,6 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 return;
             }
             
-            document.getElementById('page-top-bar').style.display = 'none';
             document.getElementById('filter-panel').style.display = 'none';
             document.getElementById('dashboard-view').style.display = 'none';
             document.getElementById('map-view').style.display = 'none';
@@ -794,7 +808,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             // Add "Edit Profile" button if this is the user's own profile OR if admin
             const existingEditBtn = profileView.querySelector('.edit-profile-btn');
             if (existingEditBtn) existingEditBtn.remove();
-            const isAdmin = currentUserEmail === 'admin@drb.network';
+            const isAdmin = false;
             const isOwnProfile = alumnus.email && currentUserEmail && alumnus.email.toLowerCase().includes(currentUserEmail.toLowerCase());
             if (isOwnProfile || isAdmin) {
                 const editBtn = document.createElement('button');
@@ -875,7 +889,6 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
         function showMainView() {
             profileView.style.display = 'none';
-            document.getElementById('page-top-bar').style.display = '';
             document.getElementById('filter-panel').style.display = '';
             window.location.hash = '';
             switchView(currentView);
@@ -1895,6 +1908,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 setRequestAccessMessage('');
                 requestAccessModal.style.display = 'flex';
                 document.body.style.overflow = 'hidden';
+                trapFocus(requestAccessModal);
             };
 
             const openRequestAccessFromLogin = emailValue => {
@@ -1906,6 +1920,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
 
             const closeRequestAccessModal = () => {
                 if (!requestAccessModal) return;
+                releaseFocus(requestAccessModal);
                 requestAccessModal.style.display = 'none';
                 document.body.style.overflow = '';
             };
@@ -2550,11 +2565,26 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
     function renderProfiles() {
         const searchInput = document.getElementById('search-input');
         currentSearchQuery = searchInput ? searchInput.value.trim().toLowerCase() : '';
+        updateFilterBadge();
         renderCurrentView();
+    }
+
+    function updateFilterBadge() {
+        const badge = document.getElementById('filter-count-badge');
+        if (!badge) return;
+        const criteria = buildActiveFilterCriteria();
+        if (criteria.length > 0) {
+            badge.textContent = criteria.length;
+            badge.style.display = 'inline-block';
+        } else {
+            badge.style.display = 'none';
+        }
     }
 
     async function loadDataFromSupabase() {
         if (!loadingMessage) return;
+        const skeleton = document.getElementById('loading-skeleton');
+        if (skeleton) skeleton.style.display = 'block';
         loadingMessage.style.display = 'block';
         loadingMessage.textContent = 'Loading data...';
         allAlumniData = [];
@@ -2595,7 +2625,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     phone: coerceOptionalBoolean(alum.share_phone) ?? !!fallbackConsent.phone,
                     social: coerceOptionalBoolean(alum.share_social) ?? !!fallbackConsent.social
                 };
-                const canViewPrivateContact = currentUserEmail === 'admin@drb.network' || (
+                const canViewPrivateContact = (
                     alum.email &&
                     currentUserEmail &&
                     alum.email.toLowerCase().trim() === currentUserEmail.toLowerCase().trim()
@@ -2725,6 +2755,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             });
 
             loadingMessage.style.display = 'none';
+            if (skeleton) skeleton.style.display = 'none';
             if (loginMessage) loginMessage.textContent = '';
             if (loginBtn) loginBtn.disabled = false;
 
@@ -2767,7 +2798,11 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             bindFilterSidebarInteractions(document.getElementById('filter-panel'));
             
             window.addEventListener('hashchange', router);
-            window.addEventListener('resize', renderProfiles);
+            let resizeDebounce;
+            window.addEventListener('resize', () => {
+                clearTimeout(resizeDebounce);
+                resizeDebounce = setTimeout(renderProfiles, 250);
+            });
             renderCurrentView();
         } catch (error) {
             console.error('Error loading data from Supabase:', error);
@@ -2782,6 +2817,8 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 if (event === 'SIGNED_IN' && session) {
                     currentUserEmail = session.user.email;
                     document.body.classList.add('logged-in');
+                    const loginScreen = document.getElementById('login-screen');
+                    if (loginScreen) loginScreen.classList.add('hidden');
                     loadDataFromSupabase();
                     router();
                 } else if (event === 'SIGNED_OUT') {
@@ -2825,18 +2862,17 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                     const rawInput = loginEmailInput.value.trim();
                     if (!rawInput) return;
 
+                    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (!emailPattern.test(rawInput)) {
+                        loginMessage.textContent = 'Please enter a valid email address.';
+                        loginMessage.classList.add('error');
+                        return;
+                    }
+
                     loginBtn.disabled = true;
                     loginMessage.textContent = 'Checking your access...';
                     loginMessage.classList.remove('error');
 
-                    // Admin bypass (Local Development Only)
-                    if (typeof SECRET_ADMIN_PASSWORD !== 'undefined' && rawInput === SECRET_ADMIN_PASSWORD) {
-                        currentUserEmail = 'admin@drb.network';
-                        document.body.classList.add('logged-in');
-                        loadDataFromSupabase();
-                        showMainView();
-                        return;
-                    }
 
                     const { error } = await supabase.auth.signInWithOtp({
                         email: rawInput,
@@ -2855,7 +2891,12 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         loginBtn.disabled = false;
 
                         if (isNotApprovedError) {
-                            openRequestAccessFromLogin(rawInput);
+                            const requestLink = document.createElement('a');
+                            requestLink.href = '#';
+                            requestLink.textContent = 'Request access';
+                            requestLink.style.cssText = 'color: var(--carolina-blue); text-decoration: underline; cursor: pointer; margin-left: 4px;';
+                            requestLink.addEventListener('click', (e) => { e.preventDefault(); openRequestAccessFromLogin(rawInput); });
+                            loginMessage.appendChild(requestLink);
                         }
                     } else {
                         currentUserEmail = rawInput;
@@ -2927,6 +2968,13 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 }
             });
 
+            const filterCloseMobileBtn = document.getElementById('filter-close-mobile-btn');
+            if (filterCloseMobileBtn) {
+                filterCloseMobileBtn.addEventListener('click', () => {
+                    document.body.classList.remove('filters-visible');
+                });
+            }
+
             // --- View Toggles ---
             const viewMyProfileBtn = document.getElementById('view-my-profile-btn');
             if (viewMyProfileBtn) {
@@ -2936,7 +2984,12 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                    if (myProfile) {
                        window.location.hash = '#profile=' + myProfile.id;
                    } else {
-                       alert('Your profile details could not be found. Please ensure your email is fully registered.');
+                       const msg = document.createElement('div');
+                       msg.className = 'profile-not-found-msg';
+                       msg.style.cssText = 'position:fixed;top:80px;left:50%;transform:translateX(-50%);background:var(--bg-secondary);border:1px solid var(--border-color);padding:16px 24px;border-radius:12px;z-index:999;color:var(--text-primary);font-size:0.9rem;';
+                       msg.textContent = 'Your profile could not be found. Please check that your registered email matches your login.';
+                       document.body.appendChild(msg);
+                       setTimeout(() => msg.remove(), 4000);
                    }
                 });
             }
@@ -3193,7 +3246,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             // --- Open Edit Modal ---
             window.openEditModal = function(alumnus) {
                 editingAlumnus = alumnus;
-                const isAdmin = currentUserEmail === 'admin@drb.network';
+                const isAdmin = false;
                 document.getElementById('admin-edit-fields').style.display = isAdmin ? 'block' : 'none';
                 document.getElementById('edit-firstname').value = alumnus.firstName || '';
                 document.getElementById('edit-lastname').value = alumnus.lastName || '';
@@ -3259,9 +3312,11 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                 editMessage.className = 'edit-message';
                 editModal.style.display = 'flex';
                 document.body.style.overflow = 'hidden';
+                trapFocus(editModal);
             };
 
             function closeEditModal() {
+                releaseFocus(editModal);
                 editModal.style.display = 'none';
                 document.body.style.overflow = '';
                 editingAlumnus = null;
@@ -3271,6 +3326,32 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
             document.getElementById('modal-cancel-btn').addEventListener('click', closeEditModal);
             // Click-outside-to-close behavior removed per user feedback
             // editModal.addEventListener('click', (e) => { if (e.target === editModal) closeEditModal(); });
+
+            // Focus trap and Escape key for modals
+            function trapFocus(modal) {
+                const focusable = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                first.focus();
+                modal._trapHandler = (e) => {
+                    if (e.key === 'Tab') {
+                        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+                        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+                    }
+                };
+                modal.addEventListener('keydown', modal._trapHandler);
+            }
+            function releaseFocus(modal) {
+                if (modal._trapHandler) modal.removeEventListener('keydown', modal._trapHandler);
+            }
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    if (editModal && editModal.style.display !== 'none') closeEditModal();
+                    else if (requestAccessModal && requestAccessModal.style.display !== 'none') closeRequestAccessModal();
+                }
+            });
 
             editForm.addEventListener('submit', async (e) => {
                 e.preventDefault();
@@ -3328,7 +3409,7 @@ const SECRET_ADMIN_PASSWORD = typeof CONFIG_ADMIN_PASSWORD !== 'undefined' ? CON
                         ...(drbPhotoUrl ? { drb_photo_url: drbPhotoUrl } : {})
                     };
 
-                    if (currentUserEmail === 'admin@drb.network') {
+                    if (false) {
                         const fn = document.getElementById('edit-firstname').value.trim();
                         if (fn) updates.first_name = fn;
                         const ln = document.getElementById('edit-lastname').value.trim();
