@@ -572,24 +572,6 @@ body.logged-in #page-top-bar { display: flex; }
     border-bottom: 1px solid var(--border-color);
 }
 
-.view-label {
-    display: none;
-    font-size: 0.65rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-}
-
-@media (min-width: 900px) {
-    .view-label {
-        display: block;
-    }
-    .view-btn {
-        flex-direction: column;
-        gap: 2px;
-        align-items: center;
-    }
-}
-
 /* --- Skeleton Loading --- */
 .skeleton-card {
     background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
